@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Premium</h1>
+<p>You are on <strong>{{ TIER_NAMES[me.tier] }}</strong>.</p>
+
+{% if paypal_ready %}
+<p>Payments are connected through PayPal. Subscribing takes you to PayPal to approve — nothing is charged on Loop itself.</p>
+{% if sub and sub.status == 'active' %}
+<p>You have an active PayPal subscription for <strong>{{ TIER_NAMES[sub.tier] }}</strong>.</p>
+<form method="post" action="{{ url_for('premium_cancel_subscription') }}"><button type="submit">Cancel subscription (PayPal)</button></form>
+{% elif sub and sub.status == 'pending' %}
+<p>Your PayPal subscription is awaiting approval. Complete it on PayPal and your plan will update once it becomes active.</p>
+{% else %}
+<form method="post" action="{{ url_for('premium_subscribe') }}"><input type="hidden" name="tier" value="pro"><button type="submit">Subscribe to Pro with PayPal — {{ prices.pro }}</button></form>
+<form method="post" action="{{ url_for('premium_subscribe') }}"><input type="hidden" name="tier" value="elite"><button type="submit">Subscribe to Elite with PayPal — {{ prices.elite }}</button></form>
+{% endif %}
+{% else %}
+<p><strong>Payments are not connected yet.</strong> Loop takes no payments until PayPal is linked. The buttons below are a demo switch only — no payment is charged.</p>
+{% endif %}
+
+<div class="card">
+  <h2>Free — Free</h2>
+  <ul>
+    <li>Taps up to {{ tap_limits.free }} seconds</li>
+    <li>Linked accounts: none</li>
+    <li>Live replays: not saved</li>
+    <li>Stories and Snips disappear in 24 hours</li>
+  </ul>
+  {% if not paypal_ready %}
+  <form method="post"><input type="hidden" name="tier" value="free"><button type="submit">Switch to Free (demo)</button></form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Pro — {{ prices.pro }}</h2>
+  <ul>
+    <li>Taps up to {{ tap_limits.pro }} seconds</li>
+    <li>Linked accounts: up to 2</li>
+    <li>Live replays: saved for 24 hours</li>
+    <li>Stories and Snips disappear in 24 hours</li>
+  </ul>
+  {% if not paypal_ready %}
+  <form method="post"><input type="hidden" name="tier" value="pro"><button type="submit">Switch to Pro (demo)</button></form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Elite — {{ prices.elite }}</h2>
+  <ul>
+    <li>Taps up to {{ tap_limits.elite }} seconds</li>
+    <li>Linked accounts: unlimited</li>
+    <li>Live replays: your choice per Live</li>
+    <li>Stories and Snips disappear in 24 hours</li>
+  </ul>
+  {% if not paypal_ready %}
+  <form method="post"><input type="hidden" name="tier" value="elite"><button type="submit">Switch to Elite (demo)</button></form>
+  {% endif %}
+</div>
+
+<h2>Compare plans</h2>
+<table>
+  <tr><th></th><th>Free</th><th>Pro</th><th>Elite</th></tr>
+  <tr><td>Monthly price</td><td>Free</td><td>{{ prices.pro }}</td><td>{{ prices.elite }}</td></tr>
+  <tr><td>Tap length</td><td>{{ tap_limits.free }} seconds</td><td>{{ tap_limits.pro }} seconds</td><td>{{ tap_limits.elite }} seconds</td></tr>
+  <tr><td>Linked accounts</td><td>None</td><td>Up to 2</td><td>Unlimited</td></tr>
+  <tr><td>Live replay saving</td><td>Not saved</td><td>24 hours</td><td>Your choice</td></tr>
+</table>
+{% endblock %}

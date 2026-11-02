@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Linked accounts</h1>
+<p>Link the platforms where you earn, so people can find you there too.</p>
+<p>Your plan: {{ TIER_NAMES[me.tier] }} —
+{% if cap is none %}unlimited linked accounts.{% elif cap == 0 %}no linked accounts included.{% else %}up to {{ cap }} linked accounts.{% endif %}
+You have {{ links|length }}.</p>
+<form method="post" class="card">
+  <label>Platform
+    <input name="platform" list="platforms" placeholder="e.g. YouTube" required>
+    <datalist id="platforms">
+      <option value="YouTube">
+      <option value="Twitch">
+      <option value="Patreon">
+      <option value="Shop">
+      <option value="Website">
+    </datalist>
+  </label>
+  <label>Handle or address <input name="handle" placeholder="@you or a link" required></label>
+  <button type="submit">Add link</button>
+</form>
+{% for l in links %}
+<article class="card">
+  <p><strong>{{ l.platform }}</strong> — {{ l.handle }}</p>
+</article>
+{% else %}
+<p>No linked accounts yet.</p>
+{% endfor %}
+{% endblock %}

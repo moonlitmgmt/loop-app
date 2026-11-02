@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{% if mode == "signup" %}Create your account{% else %}Welcome back{% endif %}</h1>
+<form method="post">
+  {% if mode == "signup" %}
+  <label>Display name <input name="display_name" required></label>
+  <label>Email <input name="email" type="email" required></label>
+  {% endif %}
+  <label>Username <input name="username" required></label>
+  <label>Password <input name="password" type="password" required></label>
+  <button type="submit">{% if mode == "signup" %}Sign up{% else %}Log in{% endif %}</button>
+</form>
+{% if mode == "signup" %}
+<p>Already have an account? <a href="{{ url_for('login') }}">Log in</a>.</p>
+{% else %}
+<p>No account yet? <a href="{{ url_for('signup') }}">Sign up</a>.</p>
+{% endif %}
+<h2>Demo accounts</h2>
+<p>Seeded demo logins (password for all three is <code>demo1234</code>):</p>
+<ul>
+  <li><code>demo_amy</code> — Free plan</li>
+  <li><code>demo_bo</code> — Pro plan</li>
+  <li><code>demo_june</code> — Elite plan</li>
+</ul>
+{% endblock %}

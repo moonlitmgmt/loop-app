@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Friends</h1>
+<form method="post" class="card">
+  <input type="hidden" name="action" value="send">
+  <label>Add by username <input name="username" required></label>
+  <button type="submit">Send friend request</button>
+</form>
+
+<h2>Requests waiting on you</h2>
+{% for r in incoming %}
+<form method="post" class="card">
+  <p>{{ r.display_name }} (@{{ r.username }})</p>
+  <input type="hidden" name="action" value="accept">
+  <input type="hidden" name="fid" value="{{ r.id }}">
+  <button type="submit">Accept</button>
+</form>
+{% else %}
+<p>None.</p>
+{% endfor %}
+
+<h2>Requests you sent</h2>
+{% for r in outgoing %}
+<p>{{ r.display_name }} (@{{ r.username }}) — pending</p>
+{% else %}
+<p>None.</p>
+{% endfor %}
+
+<h2>Your friends</h2>
+{% for f in friends %}
+<form method="post" class="card">
+  <p><a href="{{ url_for('profile_view', username=f.username) }}">{{ f.display_name }}</a> (@{{ f.username }}) · <a href="{{ url_for('thread', username=f.username) }}">Message</a></p>
+  <input type="hidden" name="action" value="remove">
+  <input type="hidden" name="friend_id" value="{{ f.id }}">
+  <button type="submit">Remove</button>
+</form>
+{% else %}
+<p>No friends yet.</p>
+{% endfor %}
+{% endblock %}

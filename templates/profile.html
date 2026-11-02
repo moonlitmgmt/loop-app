@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ user.display_name }}</h1>
+<p>@{{ user.username }} · {{ TIER_NAMES[user.tier] }}</p>
+{% if user.bio %}<p>{{ user.bio }}</p>{% endif %}
+{% if user.id == me.id %}
+<form method="post" class="card">
+  <label>Bio <textarea name="bio" rows="2">{{ user.bio }}</textarea></label>
+  <button type="submit">Save bio</button>
+</form>
+{% endif %}
+
+<h2>Artist pages</h2>
+{% for a in artists %}
+<p><a href="{{ url_for('artist_view', page_id=a.id) }}">{{ a.artist_name }}</a> ({{ a.artist_handle }}) — {{ a.craft }}, {{ a.scope }}</p>
+{% else %}
+<p>No artist pages yet.</p>
+{% endfor %}
+{% if user.id == me.id %}
+<p><a href="{{ url_for('artist_new') }}">Create an artist page</a></p>
+{% endif %}
+
+<h2>Linked accounts</h2>
+{% for l in links %}
+<p>{{ l.platform }} — {{ l.handle }}</p>
+{% else %}
+<p>No linked accounts.</p>
+{% endfor %}
+{% if user.id == me.id %}
+<p><a href="{{ url_for('links') }}">Manage linked accounts</a>
+{% if LINK_CAPS[user.tier] is none %}(Elite: unlimited){% elif LINK_CAPS[user.tier] == 0 %}(Free: none){% else %}(Pro: up to 2){% endif %}</p>
+{% endif %}
+
+<h2>Personal area</h2>
+{% if can_see_personal %}
+  {% for p in personal %}
+  <article class="card">
+    <p>{{ p.created_at }} UTC <span class="badge">Friends only</span></p>
+    <p>{{ p.body }}</p>
+  </article>
+  {% else %}
+  <p>No friends-only posts yet.</p>
+  {% endfor %}
+{% else %}
+<p>Personal posts are friends-only. Add this person as a friend to see them.</p>
+{% endif %}
+{% endblock %}

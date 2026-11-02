@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Start your artist page</h1>
+<p>An artist page is a public sub-profile linked to your main profile. Your art is public here; your personal posts and Snips stay friends-only.</p>
+<form method="post" class="card">
+  <label>Artist name <input name="artist_name" required></label>
+  <label>Artist handle <input name="artist_handle" placeholder="@your_stage_name" required></label>
+  <label>Craft
+    <select name="craft" required>
+      {% for c in crafts %}
+      <option value="{{ c }}">{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Scope
+    <select name="scope">
+      <option value="local">Local (shows under Near me)</option>
+      <option value="worldwide">Worldwide</option>
+    </select>
+  </label>
+  <label>Hometown <input name="hometown"></label>
+  <label>Your story <textarea name="story_bio" rows="3"></textarea></label>
+  <label>How to reach you <textarea name="reach_text" rows="2"></textarea></label>
+  <button type="submit">Create artist page</button>
+</form>
+{% endblock %}

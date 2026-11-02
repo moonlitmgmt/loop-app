@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Lives</h1>
+<p>Live broadcasting itself is not part of this phase yet. Lives here record the title and the replay rule for your plan, and saved replays are listed below.</p>
+<form method="post" class="card">
+  <label>Title <input name="title" placeholder="Untitled Live"></label>
+  <label>Replay rule
+    <select name="retention">
+      {% for opt in options %}
+      <option value="{{ opt }}">{{ labels[opt] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Create Live</button>
+</form>
+<h2>Saved replays</h2>
+{% for l in lives %}
+<article class="card">
+  <p><strong>{{ l.title }}</strong> by {{ l.display_name }} (@{{ l.username }})</p>
+  <p>{{ labels[l.retention] }}{% if l.saved_until %} · saved until {{ l.saved_until }} UTC{% endif %}</p>
+</article>
+{% else %}
+<p>No saved replays.</p>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Feed</h1>
+<form method="post" class="card">
+  <textarea name="body" rows="3" placeholder="Write a post..." required></textarea>
+  <label>Audience
+    <select name="audience">
+      <option value="public">Public</option>
+      <option value="friends">Friends only</option>
+    </select>
+  </label>
+  <button type="submit">Post</button>
+</form>
+{% for p in posts %}
+<article class="card">
+  <p><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
+  {% if p.audience == "friends" %}<span class="badge">Friends only</span>{% endif %}</p>
+  <p>{{ p.body }}</p>
+</article>
+{% else %}
+<p>No posts yet. Be the first.</p>
+{% endfor %}
+{% endblock %}

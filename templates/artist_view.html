@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ page.artist_name }}</h1>
+<p>{{ page.artist_handle }} · {{ page.craft }} · {{ page.scope }}{% if page.hometown %}, {{ page.hometown }}{% endif %}</p>
+<p>by <a href="{{ url_for('profile_view', username=page.username) }}">{{ page.display_name }} (@{{ page.username }})</a></p>
+{% if page.story_bio %}
+<h2>Story</h2>
+<p>{{ page.story_bio }}</p>
+{% endif %}
+{% if page.reach_text %}
+<h2>Reach</h2>
+<p>{{ page.reach_text }}</p>
+{% endif %}
+
+<h2>Pinned showcase</h2>
+{% for item in items %}
+<article class="card">
+  <p><strong>{{ item.title }}</strong></p>
+  {% if item.media_type == "image" and item.media_filename %}
+  <img src="{{ url_for('uploaded_file', filename=item.media_filename) }}" style="max-width:100%">
+  {% elif item.media_type == "video" and item.media_filename %}
+  <video controls preload="metadata" style="max-width:100%">
+    <source src="{{ url_for('uploaded_file', filename=item.media_filename) }}">
+  </video>
+  {% endif %}
+</article>
+{% else %}
+<p>Nothing pinned yet.</p>
+{% endfor %}
+
+{% if page.user_id == me.id %}
+<h2>Add to the showcase</h2>
+<form method="post" enctype="multipart/form-data" class="card">
+  <label>Title <input name="title"></label>
+  <label>Photo or video <input id="show-media" name="media" type="file" accept="image/*,video/*"></label>
+  <input id="duration_seconds" name="duration_seconds" type="hidden">
+  <p>Video showcase items follow your {{ TIER_NAMES[me.tier] }} Tap limit of {{ limit }} seconds.</p>
+  <button type="submit">Pin to showcase</button>
+</form>
+<script>
+document.getElementById('show-media').addEventListener('change', function () {
+  var f = this.files[0];
+  if (!f || !f.type.startsWith('video/')) return;
+  var v = document.createElement('video');
+  v.preload = 'metadata';
+  v.onloadedmetadata = function () {
+    document.getElementById('duration_seconds').value = v.duration;
+  };
+  v.src = URL.createObjectURL(f);
+});
+</script>
+{% endif %}
+{% endblock %}

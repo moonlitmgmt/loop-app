@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Stories</h1>
+<p>Stories disappear 24 hours after posting. Only you and your friends see them here.</p>
+<form method="post" enctype="multipart/form-data" class="card">
+  <textarea name="body" rows="2" placeholder="Share a moment..."></textarea>
+  <label>Photo (optional) <input name="image" type="file" accept="image/*"></label>
+  <button type="submit">Post story</button>
+</form>
+{% for s in stories %}
+<article class="card">
+  <p><strong>{{ s.display_name }}</strong> @{{ s.username }} · disappears {{ s.expires_at }} UTC</p>
+  {% if s.body %}<p>{{ s.body }}</p>{% endif %}
+  {% if s.media_filename %}
+  <img src="{{ url_for('uploaded_file', filename=s.media_filename) }}" style="max-width:100%">
+  {% endif %}
+</article>
+{% else %}
+<p>No active stories.</p>
+{% endfor %}
+{% endblock %}

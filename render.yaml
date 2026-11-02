@@ -1,0 +1,27 @@
+# Render blueprint for Loop (free test tier).
+# Free tier has no persistent disk: the SQLite DB and uploads/ reset on
+# redeploy/restart, so this is a test/demo link, not a launch home.
+# PayPal keys and plan IDs are set in the Render dashboard (sync: false),
+# never in this file.
+services:
+  - type: web
+    name: loop
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: LOOP_SECRET_KEY
+        generateValue: true
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_PRO_PLAN_ID
+        sync: false
+      - key: PAYPAL_ELITE_PLAN_ID
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false

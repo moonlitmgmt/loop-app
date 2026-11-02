@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Discover Local Artists</h1>
+<p>Artist pages are public for art. Personal posts and Snips stay friends-only on the main profile.</p>
+<form method="get" class="card">
+  <label>Craft
+    <select name="craft">
+      <option value="all" {% if craft == "all" %}selected{% endif %}>All crafts</option>
+      {% for c in crafts %}
+      <option value="{{ c }}" {% if craft == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Scope
+    <select name="scope">
+      <option value="everyone" {% if scope == "everyone" %}selected{% endif %}>Everyone</option>
+      <option value="near" {% if scope == "near" %}selected{% endif %}>Near me</option>
+      <option value="worldwide" {% if scope == "worldwide" %}selected{% endif %}>Worldwide</option>
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+<p>"Near me" shows artists marked local. Worldwide shows artists marked worldwide.</p>
+{% for a in artists %}
+<article class="card">
+  <p><a href="{{ url_for('artist_view', page_id=a.id) }}"><strong>{{ a.artist_name }}</strong></a> ({{ a.artist_handle }}) — {{ a.craft }} · {{ a.scope }}{% if a.hometown %}, {{ a.hometown }}{% endif %}</p>
+  <p>by {{ a.display_name }} (@{{ a.username }})</p>
+  {% if a.story_bio %}<p>{{ a.story_bio }}</p>{% endif %}
+</article>
+{% else %}
+<p>No artists match those filters.</p>
+{% endfor %}
+{% endblock %}

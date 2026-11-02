@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loop</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <a class="brand" href="{{ url_for('feed') }}">Loop</a>
+  {% if me %}
+  <nav>
+    <a href="{{ url_for('feed') }}">Feed</a>
+    <a href="{{ url_for('taps') }}">Taps</a>
+    <a href="{{ url_for('stories') }}">Stories</a>
+    <a href="{{ url_for('messages') }}">Messages</a>
+    <a href="{{ url_for('discover') }}">Discover</a>
+    <a href="{{ url_for('artist_new') }}">Artist page</a>
+    <a href="{{ url_for('links') }}">Links</a>
+    <a href="{{ url_for('lives') }}">Lives</a>
+    <a href="{{ url_for('premium') }}">Premium</a>
+    <a href="{{ url_for('friends') }}">Friends</a>
+    <a href="{{ url_for('my_profile') }}">Profile</a>
+    <a href="{{ url_for('logout') }}">Log out</a>
+  </nav>
+  <p class="who">Signed in as {{ me.display_name }} (@{{ me.username }}) · {{ TIER_NAMES[me.tier] }}</p>
+  {% endif %}
+</header>
+<main>
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+      <p class="flash {{ cat }}">{{ msg }}</p>
+    {% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<footer>
+  {% if paypal_ready %}
+  <p>Loop codebase. Payments are handled through PayPal. Hosting and live broadcasting are not part of this phase yet.</p>
+  {% else %}
+  <p>Loop codebase, first working version. Payments are not connected yet — tier switching on Premium is a demo switch and no payment is charged. Hosting and live broadcasting are not part of this phase yet.</p>
+  {% endif %}
+</footer>
+</body>
+</html>

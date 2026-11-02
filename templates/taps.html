@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Taps</h1>
+<p>Your {{ TIER_NAMES[me.tier] }} plan allows Taps up to {{ limit }} seconds. Longer videos are refused, with the limit named and the upgrade path shown.</p>
+<form method="post" enctype="multipart/form-data" class="card">
+  <label>Title <input name="title"></label>
+  <label>Video file <input id="video" name="video" type="file" accept="video/*" required></label>
+  <input id="duration_seconds" name="duration_seconds" type="hidden">
+  <p id="dur-note"></p>
+  <button type="submit">Post Tap</button>
+</form>
+<script>
+document.getElementById('video').addEventListener('change', function () {
+  var f = this.files[0];
+  if (!f) return;
+  var v = document.createElement('video');
+  v.preload = 'metadata';
+  v.onloadedmetadata = function () {
+    document.getElementById('duration_seconds').value = v.duration;
+    document.getElementById('dur-note').textContent =
+      'This video is about ' + Math.round(v.duration) + ' seconds.';
+  };
+  v.src = URL.createObjectURL(f);
+});
+</script>
+{% for t in taps %}
+<article class="card">
+  <p><strong>{{ t.display_name }}</strong> @{{ t.username }} · {{ t.created_at }} UTC · {{ "%.0f"|format(t.duration_seconds) }} seconds</p>
+  <p>{{ t.title }}</p>
+  <video controls preload="metadata" style="max-width:100%">
+    <source src="{{ url_for('uploaded_file', filename=t.filename) }}">
+  </video>
+</article>
+{% else %}
+<p>No Taps yet.</p>
+{% endfor %}
+{% endblock %}
