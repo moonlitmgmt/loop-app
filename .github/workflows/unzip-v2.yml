@@ -1,0 +1,29 @@
+name: Unzip Loop v2 package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/unzip-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract v2 package over repo files
+        run: |
+          unzip -o loop-app-v2-upload.zip -d .
+          rm -f loop-app-v2-upload.zip
+          rm -rf .github/workflows
+      - name: Commit extracted v2 files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy Loop v2: restyled UI + Phase 1 and Phase 2 features" || echo "Nothing to commit"
+          git push
