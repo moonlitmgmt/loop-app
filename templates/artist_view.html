@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="artist-hero">
 <h1>{{ page.artist_name }}</h1>
-<p>{{ page.artist_handle }} · {{ page.craft }} · {{ page.scope }}{% if page.hometown %}, {{ page.hometown }}{% endif %}</p>
+{% if page.hidden %}<p><span class="badge">Hidden by moderation — not shown in Discover or search</span></p>{% endif %}
+<p class="page-sub">{{ page.artist_handle }} · {{ page.craft }} · {{ page.scope }}{% if page.hometown %}, {{ page.hometown }}{% endif %}</p>
 <p>by <a href="{{ url_for('profile_view', username=page.username) }}">{{ page.display_name }} (@{{ page.username }})</a></p>
+</div>
 {% if page.story_bio %}
 <h2>Story</h2>
 <p>{{ page.story_bio }}</p>
@@ -26,6 +29,61 @@
 </article>
 {% else %}
 <p>Nothing pinned yet.</p>
+{% endfor %}
+
+{% if page.user_id != me.id %}
+<h2>Send a tip (ledger only)</h2>
+<p>Loop keeps {{ PLATFORM_FEE_PERCENT }}% of each tip and the creator keeps the rest. No payment is taken here — tips are recorded in the ledger and stay pending payout until a payment provider is connected.</p>
+<form method="post" action="{{ url_for('artist_tip', page_id=page.id) }}" class="card">
+  <label>Amount (USD, at least $1.00) <input name="amount" type="number" step="0.01" min="1" required></label>
+  <label>Note (optional) <input name="note"></label>
+  <button type="submit">Record tip</button>
+</form>
+<h2>Report this artist page</h2>
+<form method="post" action="{{ url_for('report') }}" class="card">
+  <input type="hidden" name="target_type" value="artist">
+  <input type="hidden" name="target_id" value="{{ page.id }}">
+  <input name="reason" placeholder="Report reason (optional)">
+  <button type="submit">Report</button>
+</form>
+{% endif %}
+
+<h2>Shop — items and offers</h2>
+<p>Sales here are ledger records only: no checkout runs and no payment is taken. The seller amount stays pending payout, and Loop's commission is {{ PLATFORM_FEE_PERCENT }}% of each recorded sale.</p>
+{% for item in shop_items %}
+<article class="card">
+  <p><strong>{{ item.title }}</strong> — ${{ "%.2f"|format(item.price_cents / 100) }}</p>
+  {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+  {% if item.owner_id != me.id %}
+  <form method="post" action="{{ url_for('marketplace_buy', item_id=item.id) }}">
+    <button type="submit">Record a demo sale — no payment taken</button>
+  </form>
+  {% endif %}
+</article>
+{% else %}
+<p>No items listed yet.</p>
+{% endfor %}
+{% if page.user_id == me.id %}
+<h2>List an item</h2>
+<form method="post" action="{{ url_for('artist_item_new', page_id=page.id) }}" class="card">
+  <label>Title <input name="title" required></label>
+  <label>Description <input name="description"></label>
+  <label>Price (USD, at least $1.00) <input name="price" type="number" step="0.01" min="1" required></label>
+  <button type="submit">List item</button>
+</form>
+{% endif %}
+
+<h2>Tips received (ledger)</h2>
+<p>Total recorded: ${{ "%.2f"|format(tip_total / 100) }} — all pending payout until a payment provider is connected.</p>
+{% for t in tip_rows %}
+{% if page.user_id == me.id or t.sender_id == me.id %}
+<article class="card">
+  <p>${{ "%.2f"|format(t.amount_cents / 100) }} from {{ t.display_name }} · creator keeps ${{ "%.2f"|format(t.creator_amount_cents / 100) }}, platform fee ${{ "%.2f"|format(t.platform_fee_cents / 100) }} ({{ PLATFORM_FEE_PERCENT }}%)</p>
+  {% if t.note %}<p>{{ t.note }}</p>{% endif %}
+</article>
+{% endif %}
+{% else %}
+<p>No tips recorded yet.</p>
 {% endfor %}
 
 {% if page.user_id == me.id %}

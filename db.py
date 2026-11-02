@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     tier TEXT NOT NULL DEFAULT 'free',
     bio TEXT NOT NULL DEFAULT '',
+    is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -38,6 +39,72 @@ CREATE TABLE IF NOT EXISTS posts (
     user_id INTEGER NOT NULL,
     body TEXT NOT NULL,
     audience TEXT NOT NULL DEFAULT 'public',
+    hidden INTEGER NOT NULL DEFAULT 0,
+    view_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS post_likes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(post_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS post_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_id INTEGER NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL,
+    recipient_id INTEGER NOT NULL,
+    artist_page_id INTEGER,
+    amount_cents INTEGER NOT NULL,
+    platform_fee_cents INTEGER NOT NULL,
+    creator_amount_cents INTEGER NOT NULL,
+    fee_rate REAL NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending_payout',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS marketplace_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    artist_page_id INTEGER NOT NULL,
+    owner_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    price_cents INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS marketplace_sales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL,
+    buyer_id INTEGER NOT NULL,
+    seller_id INTEGER NOT NULL,
+    price_cents INTEGER NOT NULL,
+    commission_cents INTEGER NOT NULL,
+    seller_amount_cents INTEGER NOT NULL,
+    commission_rate REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending_payout',
     created_at TEXT NOT NULL
 );
 
@@ -79,6 +146,7 @@ CREATE TABLE IF NOT EXISTS artist_pages (
     hometown TEXT NOT NULL DEFAULT '',
     story_bio TEXT NOT NULL DEFAULT '',
     reach_text TEXT NOT NULL DEFAULT '',
+    hidden INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -156,11 +224,96 @@ def connect(db_path):
     return conn
 
 
+def migrate(conn):
+    """Non-destructive Phase 1 migration for databases created before
+    the new columns/tables existed. Adds only missing columns/tables;
+    it never drops, rewrites, or deletes existing rows. The earliest
+    account becomes the demo admin only if no admin exists yet."""
+    cols = {}
+    for table in ("users", "posts", "artist_pages"):
+        cols[table] = {
+            r[1] for r in conn.execute(
+                "PRAGMA table_info(%s)" % table
+            ).fetchall()
+        }
+    additions = [
+        ("users", "is_admin", "ALTER TABLE users ADD COLUMN"
+         " is_admin INTEGER NOT NULL DEFAULT 0"),
+        ("posts", "hidden", "ALTER TABLE posts ADD COLUMN"
+         " hidden INTEGER NOT NULL DEFAULT 0"),
+        ("posts", "view_count", "ALTER TABLE posts ADD COLUMN"
+         " view_count INTEGER NOT NULL DEFAULT 0"),
+        ("artist_pages", "hidden", "ALTER TABLE artist_pages ADD COLUMN"
+         " hidden INTEGER NOT NULL DEFAULT 0"),
+    ]
+    for table, column, sql in additions:
+        if column not in cols.get(table, set()):
+            conn.execute(sql)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS post_likes ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " post_id INTEGER NOT NULL, user_id INTEGER NOT NULL,"
+        " created_at TEXT NOT NULL, UNIQUE(post_id, user_id))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS post_comments ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " post_id INTEGER NOT NULL, user_id INTEGER NOT NULL,"
+        " body TEXT NOT NULL, created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS reports ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " reporter_id INTEGER NOT NULL, target_type TEXT NOT NULL,"
+        " target_id INTEGER NOT NULL, reason TEXT NOT NULL DEFAULT '',"
+        " status TEXT NOT NULL DEFAULT 'open',"
+        " created_at TEXT NOT NULL, resolved_at TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tips ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " sender_id INTEGER NOT NULL, recipient_id INTEGER NOT NULL,"
+        " artist_page_id INTEGER, amount_cents INTEGER NOT NULL,"
+        " platform_fee_cents INTEGER NOT NULL,"
+        " creator_amount_cents INTEGER NOT NULL, fee_rate REAL NOT NULL,"
+        " note TEXT NOT NULL DEFAULT '',"
+        " status TEXT NOT NULL DEFAULT 'pending_payout',"
+        " created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS marketplace_items ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " artist_page_id INTEGER NOT NULL, owner_id INTEGER NOT NULL,"
+        " title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',"
+        " price_cents INTEGER NOT NULL, created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS marketplace_sales ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " item_id INTEGER NOT NULL, buyer_id INTEGER NOT NULL,"
+        " seller_id INTEGER NOT NULL, price_cents INTEGER NOT NULL,"
+        " commission_cents INTEGER NOT NULL,"
+        " seller_amount_cents INTEGER NOT NULL,"
+        " commission_rate REAL NOT NULL,"
+        " status TEXT NOT NULL DEFAULT 'pending_payout',"
+        " created_at TEXT NOT NULL)"
+    )
+    admin = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE is_admin = 1"
+    ).fetchone()[0]
+    if admin == 0:
+        conn.execute(
+            "UPDATE users SET is_admin = 1 WHERE id ="
+            " (SELECT MIN(id) FROM users)"
+        )
+
+
 def init_db(db_path):
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        migrate(conn)
         count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         if count == 0:
             seed_demo_data(conn)
@@ -190,8 +343,9 @@ def seed_demo_data(conn):
     for username, display, email, tier, bio in demos:
         conn.execute(
             "INSERT INTO users (username, display_name, email, password_hash,"
-            " tier, bio, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (username, display, email, hash_password(DEMO_PASSWORD), tier, bio, now),
+            " tier, bio, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (username, display, email, hash_password(DEMO_PASSWORD), tier, bio,
+             1 if username == "demo_amy" else 0, now),
         )
     amy = _user_id(conn, "demo_amy")
     bo = _user_id(conn, "demo_bo")

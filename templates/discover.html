@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="page-head">
 <h1>Discover Local Artists</h1>
-<p>Artist pages are public for art. Personal posts and Snips stay friends-only on the main profile.</p>
+<p class="page-sub">Artist pages are public for art. Personal posts and Snips stay friends-only on the main profile.</p>
+</div>
 <form method="get" class="card">
   <label>Craft
     <select name="craft">
@@ -27,6 +29,11 @@
   <p>by {{ a.display_name }} (@{{ a.username }})</p>
   {% if a.story_bio %}<p>{{ a.story_bio }}</p>{% endif %}
 </article>
+{% if me.tier != "elite" and loop.index == 4 %}
+<div class="card ad-slot">
+  <p><span class="badge">Ad</span> Ad placeholder — this slot is empty until an ad partner fills it. Elite members don't see ads.</p>
+</div>
+{% endif %}
 {% else %}
 <p>No artists match those filters.</p>
 {% endfor %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>#{{ tag }}</h1>
+<p>Posts tagged #{{ tag }}.</p>
+{% for p in posts %}
+<article class="card">
+  <p><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
+  {% if p.audience == "friends" %}<span class="badge">Friends only</span>{% endif %}</p>
+  <p>{{ p.body|hashtag_links|safe }}</p>
+  <p>{{ engagement[p.id].likes }} likes · {{ engagement[p.id].comments }} comments · {{ p.view_count }} views</p>
+</article>
+{% else %}
+<p>No posts with this hashtag yet.</p>
+{% endfor %}
+{% endblock %}

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="auth-wrap">
+<div class="card">
 <h1>{% if mode == "signup" %}Create your account{% else %}Welcome back{% endif %}</h1>
 <form method="post">
   {% if mode == "signup" %}
@@ -22,4 +24,6 @@
   <li><code>demo_bo</code> — Pro plan</li>
   <li><code>demo_june</code> — Elite plan</li>
 </ul>
+</div>
+</div>
 {% endblock %}

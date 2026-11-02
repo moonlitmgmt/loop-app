@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+<h1>Revenue dashboard</h1>
+<p class="page-sub"><strong>Ledger only — none of this is real billed or paid-out revenue.</strong> Subscription counts include demo accounts and demo tier switches, and tips and marketplace sales are ledger records with payouts pending until a payment provider is connected. No payment is charged anywhere on this page.</p>
+</div>
+
+<h2>Subscriptions</h2>
+<table>
+  <tr><th>Tier</th><th>Accounts</th><th>Price</th></tr>
+  <tr><td>Free</td><td>{{ tier_counts.get('free', 0) }}</td><td>Free</td></tr>
+  <tr><td>Pro</td><td>{{ tier_counts.get('pro', 0) }}</td><td>$4.99/mo</td></tr>
+  <tr><td>Elite</td><td>{{ tier_counts.get('elite', 0) }}</td><td>$19.99/mo</td></tr>
+</table>
+<p>Projected monthly revenue from current tier assignments: <strong>${{ "%.2f"|format(projected_mrr_cents / 100) }}/mo</strong>.</p>
+<p>Active PayPal subscriptions recorded: {{ paypal_active }}. (Zero while payments are not connected.)</p>
+
+<h2>Creator tips (ledger)</h2>
+<p>{{ tip_totals.n }} tips recorded, totalling ${{ "%.2f"|format(tip_totals.total / 100) }} — creators ${{ "%.2f"|format(tip_totals.creators / 100) }}, platform fees ${{ "%.2f"|format(tip_totals.fees / 100) }} at {{ PLATFORM_FEE_PERCENT }}%. All payouts pending.</p>
+
+<h2>Marketplace (ledger)</h2>
+<p>{{ sale_totals.n }} sales recorded, totalling ${{ "%.2f"|format(sale_totals.total / 100) }} — sellers ${{ "%.2f"|format(sale_totals.sellers / 100) }}, commission ${{ "%.2f"|format(sale_totals.fees / 100) }} at {{ PLATFORM_FEE_PERCENT }}%. All payouts pending.</p>
+
+<h2>Ad slots</h2>
+<p>No ad network is connected and no ad revenue is recorded. Placeholder slots are capped at {{ ad_slots_per_feed }} per feed load and {{ ad_slots_per_discover }} per Discover load, always labelled "Ad", and Elite members don't see ads at all. Inventory available per load: {{ ad_slots_per_feed }} feed slots + {{ ad_slots_per_discover }} Discover slot.</p>
+
+<h2>Your pending creator balance</h2>
+<p><strong>${{ "%.2f"|format(my_pending / 100) }}</strong> pending payout from tips and marketplace sales. This is a ledger balance, not money held or paid out.</p>
+
+{% if creators %}
+<h2>Pending balances by creator (admin view)</h2>
+<table>
+  <tr><th>Creator</th><th>Pending payout</th></tr>
+  {% for c in creators %}
+  <tr><td>{{ c.display_name }} (@{{ c.username }})</td><td>${{ "%.2f"|format(c.pending / 100) }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>What still needs a real account before money can flow</h2>
+<ul>
+  <li>Live PayPal Business credentials and plan IDs, linked through PayPal's own flow — subscriptions and payouts stay ledger-only until then.</li>
+  <li>An ad-network account, if ad slots are ever to be filled with real ads.</li>
+  <li>A payout method for creators (the provider chosen at that point decides it).</li>
+</ul>
+{% endblock %}

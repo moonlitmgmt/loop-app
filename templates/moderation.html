@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Moderation queue</h1>
+<p>Reports from users. Hiding a post removes it from the feed and search; hiding an artist page removes it from Discover and search. Unhide restores it.</p>
+<h2>Open reports</h2>
+{% for r in open_reports %}
+<article class="card">
+  <p><strong>{{ r.target_type }} #{{ r.target_id }}</strong> reported by {{ r.display_name }} (@{{ r.username }}) · {{ r.created_at }} UTC</p>
+  <p>{{ previews[r.id][0] }}</p>
+  {% if previews[r.id][1] %}<p><span class="badge">Currently hidden</span></p>{% endif %}
+  {% if r.reason %}<p>Reason: {{ r.reason }}</p>{% endif %}
+  <form method="post" style="display:inline">
+    <input type="hidden" name="report_id" value="{{ r.id }}">
+    <input type="hidden" name="action" value="hide">
+    <button type="submit">Hide</button>
+  </form>
+  <form method="post" style="display:inline">
+    <input type="hidden" name="report_id" value="{{ r.id }}">
+    <input type="hidden" name="action" value="unhide">
+    <button type="submit">Unhide</button>
+  </form>
+  <form method="post" style="display:inline">
+    <input type="hidden" name="report_id" value="{{ r.id }}">
+    <input type="hidden" name="action" value="dismiss">
+    <button type="submit">Dismiss</button>
+  </form>
+</article>
+{% else %}
+<p>No open reports.</p>
+{% endfor %}
+<h2>Recently resolved</h2>
+{% for r in resolved %}
+<article class="card">
+  <p><strong>{{ r.target_type }} #{{ r.target_id }}</strong> reported by {{ r.display_name }} · resolved {{ r.resolved_at }} UTC</p>
+  <p>{{ previews[r.id][0] }}</p>
+  {% if previews[r.id][1] %}<p><span class="badge">Currently hidden</span></p>{% endif %}
+</article>
+{% else %}
+<p>Nothing resolved yet.</p>
+{% endfor %}
+{% endblock %}

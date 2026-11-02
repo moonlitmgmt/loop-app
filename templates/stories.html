@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="page-head">
 <h1>Stories</h1>
-<p>Stories disappear 24 hours after posting. Only you and your friends see them here.</p>
+<p class="page-sub">Stories disappear 24 hours after posting. Only you and your friends see them here.</p>
+</div>
 <form method="post" enctype="multipart/form-data" class="card">
   <textarea name="body" rows="2" placeholder="Share a moment..."></textarea>
   <label>Photo (optional) <input name="image" type="file" accept="image/*"></label>

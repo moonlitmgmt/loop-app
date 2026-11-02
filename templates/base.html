@@ -3,12 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#3b2f8f">
+<link rel="manifest" href="/manifest.json">
 <title>Loop</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header>
-  <a class="brand" href="{{ url_for('feed') }}">Loop</a>
+  <div class="topbar-inner">
+    <a class="brand" href="{{ url_for('feed') }}">Loop</a>
+    {% if me %}
+    <p class="who">Signed in as {{ me.display_name }} (@{{ me.username }}) · {{ TIER_NAMES[me.tier] }}</p>
+    {% endif %}
+  </div>
   {% if me %}
   <nav>
     <a href="{{ url_for('feed') }}">Feed</a>
@@ -22,12 +29,14 @@
     <a href="{{ url_for('premium') }}">Premium</a>
     <a href="{{ url_for('friends') }}">Friends</a>
     <a href="{{ url_for('my_profile') }}">Profile</a>
+    <a href="{{ url_for('search') }}">Search</a>
+    <a href="{{ url_for('revenue') }}">Revenue</a>
+    {% if is_admin %}<a href="{{ url_for('moderation') }}">Moderation</a>{% endif %}
     <a href="{{ url_for('logout') }}">Log out</a>
   </nav>
-  <p class="who">Signed in as {{ me.display_name }} (@{{ me.username }}) · {{ TIER_NAMES[me.tier] }}</p>
   {% endif %}
 </header>
-<main>
+<main class="page">
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in msgs %}
       <p class="flash {{ cat }}">{{ msg }}</p>
@@ -42,5 +51,12 @@
   <p>Loop codebase, first working version. Payments are not connected yet — tier switching on Premium is a demo switch and no payment is charged. Hosting and live broadcasting are not part of this phase yet.</p>
   {% endif %}
 </footer>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(function () {
+    /* Offline support is optional; the app works without it. */
+  });
+}
+</script>
 </body>
 </html>

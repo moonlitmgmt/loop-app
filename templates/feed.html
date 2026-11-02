@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="page-head">
 <h1>Feed</h1>
-<form method="post" class="card">
-  <textarea name="body" rows="3" placeholder="Write a post..." required></textarea>
+<p class="page-sub">Ranked by recent likes, comments and views.</p>
+<div class="sort-toggle">{% if sort == "latest" %}<strong>Latest</strong> <a href="{{ url_for('feed') }}">Ranked</a>{% else %}<a href="{{ url_for('feed', sort='latest') }}">Latest</a> <strong>Ranked</strong>{% endif %}</div>
+</div>
+<form method="post" class="card composer">
+  <textarea name="body" rows="3" placeholder="Write a post... Use #hashtags to make it findable." required></textarea>
   <label>Audience
     <select name="audience">
       <option value="public">Public</option>
@@ -12,11 +16,35 @@
   <button type="submit">Post</button>
 </form>
 {% for p in posts %}
-<article class="card">
-  <p><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
+<article class="card post-card">
+  <p class="post-head"><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
   {% if p.audience == "friends" %}<span class="badge">Friends only</span>{% endif %}</p>
-  <p>{{ p.body }}</p>
+  <p class="post-body">{{ p.body|hashtag_links|safe }}</p>
+  <p class="post-stats">{{ engagement[p.id].likes }} likes · {{ engagement[p.id].comments }} comments · {{ p.view_count }} views</p>
+  <div class="post-actions">
+  <form method="post" action="{{ url_for('post_like', post_id=p.id) }}" style="display:inline">
+    <button type="submit">{% if p.id in liked %}Unlike{% else %}Like{% endif %}</button>
+  </form>
+  <form method="post" action="{{ url_for('report') }}" style="display:inline">
+    <input type="hidden" name="target_type" value="post">
+    <input type="hidden" name="target_id" value="{{ p.id }}">
+    <input name="reason" placeholder="Report reason (optional)" style="width:auto">
+    <button type="submit">Report</button>
+  </form>
+  </div>
+  {% for c in comments[p.id] %}
+  <p class="comment"><strong>{{ c.display_name }}</strong>: {{ c.body }}</p>
+  {% endfor %}
+  <form method="post" action="{{ url_for('post_comment', post_id=p.id) }}" class="card comment-form">
+    <input name="body" placeholder="Write a comment..." required>
+    <button type="submit">Comment</button>
+  </form>
 </article>
+{% if me.tier != "elite" and loop.index in (4, 8) %}
+<div class="card ad-slot">
+  <p><span class="badge">Ad</span> Ad placeholder — this slot is empty until an ad partner fills it. Elite members don't see ads.</p>
+</div>
+{% endif %}
 {% else %}
 <p>No posts yet. Be the first.</p>
 {% endfor %}

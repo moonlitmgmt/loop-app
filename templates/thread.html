@@ -3,18 +3,62 @@
 <p><a href="{{ url_for('messages') }}">← Back to Messages</a></p>
 <h1>Chat with {{ other.display_name }} (@{{ other.username }})</h1>
 {% if streak >= 2 %}<p><span class="badge">{{ streak }} day streak</span></p>{% endif %}
+<div id="messages-list">
 {% for m in messages %}
-<article class="card">
+<article class="card" data-message-id="{{ m.id }}">
   <p><strong>{% if m.sender_id == me.id %}You{% else %}{{ other.display_name }}{% endif %}</strong> · {{ m.created_at }} UTC
   {% if m.is_snip %}<span class="badge">Snip — disappears {{ m.expires_at }} UTC</span>{% endif %}</p>
   <p>{{ m.body }}</p>
 </article>
 {% else %}
-<p>No messages yet.</p>
+<p id="no-messages">No messages yet.</p>
 {% endfor %}
+</div>
 <form method="post" class="card">
   <textarea name="body" rows="2" placeholder="Write a message..." required></textarea>
   <label><input type="checkbox" name="is_snip"> Send as a Snip (disappears in 24 hours)</label>
   <button type="submit">Send</button>
 </form>
+<p>New messages appear here automatically without reloading the page.</p>
+<script>
+(function () {
+  var list = document.getElementById('messages-list');
+  function lastId() {
+    var cards = list.querySelectorAll('[data-message-id]');
+    if (!cards.length) return 0;
+    return parseInt(cards[cards.length - 1].getAttribute('data-message-id'), 10);
+  }
+  function addMessage(m) {
+    var empty = document.getElementById('no-messages');
+    if (empty) empty.remove();
+    var article = document.createElement('article');
+    article.className = 'card';
+    article.setAttribute('data-message-id', m.id);
+    var head = document.createElement('p');
+    var who = document.createElement('strong');
+    who.textContent = m.sender;
+    head.appendChild(who);
+    head.appendChild(document.createTextNode(' · ' + m.created_at + ' UTC'));
+    if (m.is_snip) {
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = 'Snip — disappears ' + m.expires_at + ' UTC';
+      head.appendChild(badge);
+    }
+    var body = document.createElement('p');
+    body.textContent = m.body;
+    article.appendChild(head);
+    article.appendChild(body);
+    list.appendChild(article);
+  }
+  setInterval(function () {
+    fetch('{{ url_for("thread_updates", username=other.username) }}?after=' + lastId())
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        (data.messages || []).forEach(addMessage);
+      })
+      .catch(function () { /* Next poll retries; the page still works. */ });
+  }, 5000);
+})();
+</script>
 {% endblock %}

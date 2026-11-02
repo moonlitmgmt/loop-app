@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="page-head">
 <h1>Premium</h1>
-<p>You are on <strong>{{ TIER_NAMES[me.tier] }}</strong>.</p>
+<p class="page-sub">You are on <strong>{{ TIER_NAMES[me.tier] }}</strong>.</p>
+</div>
 
 {% if paypal_ready %}
 <p>Payments are connected through PayPal. Subscribing takes you to PayPal to approve — nothing is charged on Loop itself.</p>
@@ -18,6 +20,7 @@
 <p><strong>Payments are not connected yet.</strong> Loop takes no payments until PayPal is linked. The buttons below are a demo switch only — no payment is charged.</p>
 {% endif %}
 
+<div class="tier-grid">
 <div class="card">
   <h2>Free — Free</h2>
   <ul>
@@ -25,6 +28,7 @@
     <li>Linked accounts: none</li>
     <li>Live replays: not saved</li>
     <li>Stories and Snips disappear in 24 hours</li>
+    <li>Sees clearly labelled ad placeholders (at most 2 per feed load)</li>
   </ul>
   {% if not paypal_ready %}
   <form method="post"><input type="hidden" name="tier" value="free"><button type="submit">Switch to Free (demo)</button></form>
@@ -38,6 +42,7 @@
     <li>Linked accounts: up to 2</li>
     <li>Live replays: saved for 24 hours</li>
     <li>Stories and Snips disappear in 24 hours</li>
+    <li>Sees clearly labelled ad placeholders (at most 2 per feed load)</li>
   </ul>
   {% if not paypal_ready %}
   <form method="post"><input type="hidden" name="tier" value="pro"><button type="submit">Switch to Pro (demo)</button></form>
@@ -51,10 +56,12 @@
     <li>Linked accounts: unlimited</li>
     <li>Live replays: your choice per Live</li>
     <li>Stories and Snips disappear in 24 hours</li>
+    <li><strong>Ad-free:</strong> no ad placeholders in Feed or Discover</li>
   </ul>
   {% if not paypal_ready %}
   <form method="post"><input type="hidden" name="tier" value="elite"><button type="submit">Switch to Elite (demo)</button></form>
   {% endif %}
+</div>
 </div>
 
 <h2>Compare plans</h2>

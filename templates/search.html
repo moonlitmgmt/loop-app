@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Search</h1>
+<form method="get" class="card">
+  <input name="q" value="{{ q }}" placeholder="Search posts, people, and artist pages..." required>
+  <button type="submit">Search</button>
+</form>
+{% if q %}
+<h2>People</h2>
+{% for u in users %}
+<article class="card">
+  <p><a href="{{ url_for('profile_view', username=u.username) }}"><strong>{{ u.display_name }}</strong> (@{{ u.username }})</a></p>
+  {% if u.bio %}<p>{{ u.bio }}</p>{% endif %}
+</article>
+{% else %}
+<p>No people match.</p>
+{% endfor %}
+<h2>Artist pages</h2>
+{% for a in artists %}
+<article class="card">
+  <p><a href="{{ url_for('artist_view', page_id=a.id) }}"><strong>{{ a.artist_name }}</strong></a> ({{ a.artist_handle }}) — {{ a.craft }}</p>
+</article>
+{% else %}
+<p>No artist pages match.</p>
+{% endfor %}
+<h2>Posts</h2>
+{% for p in posts %}
+<article class="card">
+  <p><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC</p>
+  <p>{{ p.body|hashtag_links|safe }}</p>
+</article>
+{% else %}
+<p>No posts match.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}

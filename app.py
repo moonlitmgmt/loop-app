@@ -13,14 +13,16 @@ nothing. No credential is ever stored in code or logged.
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (
     Flask, g, render_template, request, redirect, url_for, session,
-    flash, send_from_directory, abort,
+    flash, send_from_directory, abort, jsonify,
 )
+from markupsafe import Markup, escape
 from werkzeug.utils import secure_filename
 
 from db import (
@@ -73,6 +75,18 @@ LIVE_DELTAS = {
     "keep": None,
 }
 CRAFTS = ["Music", "Art", "Dance", "Comedy", "Photography"]
+# Phase 2 monetization, ledger only. One clear platform rate applies to
+# both creator tips and marketplace sales. It is configurable through
+# LOOP_PLATFORM_FEE_RATE (a fraction, e.g. 0.10) and is shown to both
+# sides wherever a fee is recorded. No real money moves here.
+try:
+    PLATFORM_FEE_RATE = float(os.environ.get("LOOP_PLATFORM_FEE_RATE", "0.10"))
+except ValueError:
+    PLATFORM_FEE_RATE = 0.10
+PLATFORM_FEE_RATE = min(max(PLATFORM_FEE_RATE, 0.0), 0.5)
+PLATFORM_FEE_PERCENT = int(round(PLATFORM_FEE_RATE * 100))
+AD_SLOTS_PER_FEED = 2
+AD_SLOTS_PER_DISCOVER = 1
 VIDEO_EXTS = {".mp4", ".webm", ".mov"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
@@ -103,6 +117,81 @@ def cleanup_expired():
     db.commit()
 
 
+# ---------------------------------------------------------------- phase 1
+HASHTAG_RE = re.compile(r"#([A-Za-z0-9_]+)")
+
+
+@app.template_filter("hashtag_links")
+def hashtag_links(text):
+    """Escape post text, then turn #tags into links to their tag page."""
+    escaped = escape(text or "")
+
+    def link(match):
+        tag = match.group(1)
+        return Markup('<a href="/tag/%s">#%s</a>') % (tag, tag)
+
+    return Markup(HASHTAG_RE.sub(link, str(escaped)))
+
+
+def post_engagement(db, post_ids):
+    """Return {post_id: {'likes': n, 'comments': n}} for the given posts."""
+    out = {pid: {"likes": 0, "comments": 0} for pid in post_ids}
+    if not post_ids:
+        return out
+    marks = ",".join("?" * len(post_ids))
+    for row in db.execute(
+        "SELECT post_id, COUNT(*) AS n FROM post_likes"
+        " WHERE post_id IN (%s) GROUP BY post_id" % marks, post_ids,
+    ).fetchall():
+        out[row["post_id"]]["likes"] = row["n"]
+    for row in db.execute(
+        "SELECT post_id, COUNT(*) AS n FROM post_comments"
+        " WHERE post_id IN (%s) GROUP BY post_id" % marks, post_ids,
+    ).fetchall():
+        out[row["post_id"]]["comments"] = row["n"]
+    return out
+
+
+def feed_score(post, engagement):
+    """Transparent engagement score: likes count 10, comments 15, a
+    view 0.5, minus half a point per hour of age. New posts therefore
+    start near the top, liked/commented posts stay up longer, and old
+    quiet posts sink. Ties fall back to newest first."""
+    try:
+        created = datetime.strptime(
+            post["created_at"], "%Y-%m-%d %H:%M:%S"
+        ).replace(tzinfo=timezone.utc)
+        age_hours = max(
+            0.0,
+            (datetime.now(timezone.utc) - created).total_seconds() / 3600.0,
+        )
+    except (ValueError, TypeError, KeyError):
+        age_hours = 0.0
+    eng = engagement.get(post["id"], {"likes": 0, "comments": 0})
+    views = post["view_count"] if "view_count" in post.keys() else 0
+    return (
+        eng["likes"] * 10 + eng["comments"] * 15 + (views or 0) * 0.5
+        - age_hours * 0.5
+    )
+
+
+def is_admin_user(user):
+    if not user or "is_admin" not in user.keys():
+        return False
+    return bool(user["is_admin"])
+
+
+def cents_to_dollars(cents):
+    return "$%.2f" % ((cents or 0) / 100.0)
+
+
+def split_amount(amount_cents):
+    """Split a ledger amount into (platform_fee, creator_amount) at the
+    single published platform rate, rounding the fee to whole cents."""
+    fee = int(round(amount_cents * PLATFORM_FEE_RATE))
+    return fee, amount_cents - fee
+
+
 # ---------------------------------------------------------------- auth
 def current_user():
     uid = session.get("user_id")
@@ -124,10 +213,13 @@ def login_required(view):
 
 @app.context_processor
 def inject_user():
+    me = current_user()
     return {
-        "me": current_user(),
+        "me": me,
+        "is_admin": is_admin_user(me),
         "TIER_NAMES": TIER_NAMES,
         "paypal_ready": paypal_ready(),
+        "PLATFORM_FEE_PERCENT": PLATFORM_FEE_PERCENT,
     }
 
 
@@ -310,6 +402,7 @@ def feed():
     rows = db.execute(
         "SELECT p.*, u.username, u.display_name FROM posts p"
         " JOIN users u ON u.id = p.user_id"
+        " WHERE p.hidden = 0"
         " ORDER BY p.created_at DESC, p.id DESC LIMIT 200"
     ).fetchall()
     visible = [
@@ -318,7 +411,308 @@ def feed():
         or p["user_id"] == me["id"]
         or p["user_id"] in friend_ids
     ]
-    return render_template("feed.html", posts=visible)
+    # Simple view counter: one view per visible post per feed load.
+    # It is a popularity signal, not a unique-viewer count.
+    for p in visible:
+        db.execute(
+            "UPDATE posts SET view_count = view_count + 1 WHERE id = ?",
+            (p["id"],),
+        )
+    if visible:
+        db.commit()
+        rows = db.execute(
+            "SELECT p.*, u.username, u.display_name FROM posts p"
+            " JOIN users u ON u.id = p.user_id"
+            " WHERE p.id IN (%s)"
+            % ",".join("?" * len(visible)),
+            [p["id"] for p in visible],
+        ).fetchall()
+        by_id = {p["id"]: p for p in rows}
+        visible = [by_id[p["id"]] for p in visible if p["id"] in by_id]
+    engagement = post_engagement(db, [p["id"] for p in visible])
+    liked = {
+        r["post_id"] for r in db.execute(
+            "SELECT post_id FROM post_likes WHERE user_id = ?",
+            (me["id"],),
+        ).fetchall()
+    }
+    sort = request.args.get("sort", "ranked")
+    if sort == "latest":
+        ordered = visible
+    else:
+        # Ranked: engagement + recency. Ties fall back to newest first.
+        ordered = sorted(
+            visible,
+            key=lambda p: (feed_score(p, engagement), p["created_at"]),
+            reverse=True,
+        )
+        sort = "ranked"
+    comments = {}
+    for p in ordered:
+        comments[p["id"]] = db.execute(
+            "SELECT c.*, u.username, u.display_name FROM post_comments c"
+            " JOIN users u ON u.id = c.user_id WHERE c.post_id = ?"
+            " ORDER BY c.created_at ASC, c.id ASC",
+            (p["id"],),
+        ).fetchall()
+    return render_template(
+        "feed.html", posts=ordered, engagement=engagement, liked=liked,
+        comments=comments, sort=sort,
+    )
+
+
+@app.route("/posts/<int:post_id>/like", methods=["POST"])
+@login_required
+def post_like(post_id):
+    me = current_user()
+    db = get_db()
+    post = db.execute(
+        "SELECT * FROM posts WHERE id = ? AND hidden = 0", (post_id,)
+    ).fetchone()
+    if not post:
+        abort(404)
+    existing = db.execute(
+        "SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?",
+        (post_id, me["id"]),
+    ).fetchone()
+    if existing:
+        db.execute(
+            "DELETE FROM post_likes WHERE post_id = ? AND user_id = ?",
+            (post_id, me["id"]),
+        )
+    else:
+        db.execute(
+            "INSERT INTO post_likes (post_id, user_id, created_at)"
+            " VALUES (?, ?, ?)",
+            (post_id, me["id"], now_iso()),
+        )
+    db.commit()
+    return redirect(url_for("feed"))
+
+
+@app.route("/posts/<int:post_id>/comment", methods=["POST"])
+@login_required
+def post_comment(post_id):
+    me = current_user()
+    db = get_db()
+    post = db.execute(
+        "SELECT * FROM posts WHERE id = ? AND hidden = 0", (post_id,)
+    ).fetchone()
+    if not post:
+        abort(404)
+    body = request.form.get("body", "").strip()
+    if not body:
+        flash("Write a comment first.", "error")
+    else:
+        db.execute(
+            "INSERT INTO post_comments (post_id, user_id, body, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (post_id, me["id"], body, now_iso()),
+        )
+        db.commit()
+    return redirect(url_for("feed"))
+
+
+@app.route("/tag/<tag>")
+@login_required
+def tag_page(tag):
+    me = current_user()
+    db = get_db()
+    tag = re.sub(r"[^A-Za-z0-9_]", "", tag)[:50]
+    if not tag:
+        abort(404)
+    friend_ids = {f["id"] for f in friends_of(me["id"])}
+    rows = db.execute(
+        "SELECT p.*, u.username, u.display_name FROM posts p"
+        " JOIN users u ON u.id = p.user_id"
+        " WHERE p.hidden = 0 AND p.body LIKE ?"
+        " ORDER BY p.created_at DESC, p.id DESC LIMIT 200",
+        ("%" + "#" + tag + "%",),
+    ).fetchall()
+    visible = [
+        p for p in rows
+        if p["audience"] == "public"
+        or p["user_id"] == me["id"]
+        or p["user_id"] in friend_ids
+    ]
+    engagement = post_engagement(db, [p["id"] for p in visible])
+    return render_template(
+        "tag.html", tag=tag, posts=visible, engagement=engagement,
+    )
+
+
+# ---------------------------------------------------------------- search
+@app.route("/search")
+@login_required
+def search():
+    me = current_user()
+    db = get_db()
+    q = request.args.get("q", "").strip()[:100]
+    users = artists = posts = []
+    if q:
+        like = "%" + q + "%"
+        users = db.execute(
+            "SELECT * FROM users WHERE username LIKE ? OR display_name"
+            " LIKE ? OR bio LIKE ? ORDER BY display_name LIMIT 50",
+            (like, like, like),
+        ).fetchall()
+        artists = db.execute(
+            "SELECT ap.*, u.username, u.display_name FROM artist_pages ap"
+            " JOIN users u ON u.id = ap.user_id"
+            " WHERE ap.hidden = 0 AND (ap.artist_name LIKE ?"
+            " OR ap.artist_handle LIKE ? OR ap.story_bio LIKE ?)"
+            " ORDER BY ap.artist_name LIMIT 50",
+            (like, like, like),
+        ).fetchall()
+        friend_ids = {f["id"] for f in friends_of(me["id"])}
+        rows = db.execute(
+            "SELECT p.*, u.username, u.display_name FROM posts p"
+            " JOIN users u ON u.id = p.user_id"
+            " WHERE p.hidden = 0 AND p.body LIKE ?"
+            " ORDER BY p.created_at DESC, p.id DESC LIMIT 100",
+            (like,),
+        ).fetchall()
+        posts = [
+            p for p in rows
+            if p["audience"] == "public"
+            or p["user_id"] == me["id"]
+            or p["user_id"] in friend_ids
+        ]
+    return render_template(
+        "search.html", q=q, users=users, artists=artists, posts=posts,
+    )
+
+
+# ---------------------------------------------------------------- reports
+@app.route("/report", methods=["POST"])
+@login_required
+def report():
+    me = current_user()
+    db = get_db()
+    target_type = request.form.get("target_type", "")
+    target_id = request.form.get("target_id", "")
+    reason = request.form.get("reason", "").strip()[:500]
+    if target_type not in ("post", "artist") or not target_id.isdigit():
+        flash("That report could not be filed.", "error")
+        return redirect(url_for("feed"))
+    target_id = int(target_id)
+    exists = None
+    if target_type == "post":
+        exists = db.execute(
+            "SELECT 1 FROM posts WHERE id = ?", (target_id,)
+        ).fetchone()
+    else:
+        exists = db.execute(
+            "SELECT 1 FROM artist_pages WHERE id = ?", (target_id,)
+        ).fetchone()
+    if not exists:
+        abort(404)
+    dup = db.execute(
+        "SELECT 1 FROM reports WHERE reporter_id = ? AND target_type = ?"
+        " AND target_id = ? AND status = 'open'",
+        (me["id"], target_type, target_id),
+    ).fetchone()
+    if dup:
+        flash("You already have an open report for this item.", "error")
+    else:
+        db.execute(
+            "INSERT INTO reports (reporter_id, target_type, target_id,"
+            " reason, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
+            (me["id"], target_type, target_id, reason, now_iso()),
+        )
+        db.commit()
+        flash("Reported. It is now in the moderation queue.", "ok")
+    if target_type == "artist":
+        return redirect(url_for("artist_view", page_id=target_id))
+    return redirect(url_for("feed"))
+
+
+@app.route("/moderation", methods=["GET", "POST"])
+@login_required
+def moderation():
+    me = current_user()
+    if not is_admin_user(me):
+        abort(403)
+    db = get_db()
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        report_id = request.form.get("report_id", "")
+        report = db.execute(
+            "SELECT * FROM reports WHERE id = ?", (report_id,)
+        ).fetchone() if report_id.isdigit() else None
+        if not report:
+            abort(404)
+        if action == "hide":
+            if report["target_type"] == "post":
+                db.execute(
+                    "UPDATE posts SET hidden = 1 WHERE id = ?",
+                    (report["target_id"],),
+                )
+            else:
+                db.execute(
+                    "UPDATE artist_pages SET hidden = 1 WHERE id = ?",
+                    (report["target_id"],),
+                )
+        elif action == "unhide":
+            if report["target_type"] == "post":
+                db.execute(
+                    "UPDATE posts SET hidden = 0 WHERE id = ?",
+                    (report["target_id"],),
+                )
+            else:
+                db.execute(
+                    "UPDATE artist_pages SET hidden = 0 WHERE id = ?",
+                    (report["target_id"],),
+                )
+        elif action in ("dismiss", "resolve"):
+            pass
+        else:
+            flash("Unknown moderation action.", "error")
+            return redirect(url_for("moderation"))
+        db.execute(
+            "UPDATE reports SET status = 'resolved', resolved_at = ?"
+            " WHERE id = ?",
+            (now_iso(), report["id"]),
+        )
+        db.commit()
+        flash("Moderation action saved.", "ok")
+        return redirect(url_for("moderation"))
+    open_reports = db.execute(
+        "SELECT r.*, u.username, u.display_name FROM reports r"
+        " JOIN users u ON u.id = r.reporter_id"
+        " WHERE r.status = 'open' ORDER BY r.created_at ASC, r.id ASC"
+    ).fetchall()
+    resolved = db.execute(
+        "SELECT r.*, u.username, u.display_name FROM reports r"
+        " JOIN users u ON u.id = r.reporter_id"
+        " WHERE r.status = 'resolved' ORDER BY r.resolved_at DESC,"
+        " r.id DESC LIMIT 50"
+    ).fetchall()
+    previews = {}
+    for r in list(open_reports) + list(resolved):
+        if r["target_type"] == "post":
+            row = db.execute(
+                "SELECT body, hidden FROM posts WHERE id = ?",
+                (r["target_id"],),
+            ).fetchone()
+            previews[r["id"]] = (
+                ("Post: " + row["body"][:200]) if row else "Post not found",
+                bool(row["hidden"]) if row else False,
+            )
+        else:
+            row = db.execute(
+                "SELECT artist_name, hidden FROM artist_pages WHERE id = ?",
+                (r["target_id"],),
+            ).fetchone()
+            previews[r["id"]] = (
+                ("Artist page: " + row["artist_name"]) if row
+                else "Artist page not found",
+                bool(row["hidden"]) if row else False,
+            )
+    return render_template(
+        "moderation.html", open_reports=open_reports, resolved=resolved,
+        previews=previews,
+    )
 
 
 # ---------------------------------------------------------------- profiles
@@ -606,6 +1000,46 @@ def thread(username):
     )
 
 
+@app.route("/messages/<username>/updates")
+@login_required
+def thread_updates(username):
+    """JSON feed for thread polling: messages after a given id, in the
+    same full-page thread view. No new realtime service is involved."""
+    me = current_user()
+    db = get_db()
+    other = db.execute(
+        "SELECT * FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    if not other:
+        abort(404)
+    try:
+        after = int(request.args.get("after", "0"))
+    except ValueError:
+        after = 0
+    cleanup_expired()
+    rows = db.execute(
+        "SELECT * FROM messages WHERE id > ? AND ((sender_id = ?"
+        " AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))"
+        " AND (expires_at IS NULL OR expires_at > ?)"
+        " ORDER BY created_at ASC, id ASC",
+        (after, me["id"], other["id"], other["id"], me["id"], now_iso()),
+    ).fetchall()
+    return jsonify({
+        "messages": [
+            {
+                "id": m["id"],
+                "sender": "You" if m["sender_id"] == me["id"]
+                else other["display_name"],
+                "body": m["body"],
+                "created_at": m["created_at"],
+                "is_snip": bool(m["is_snip"]),
+                "expires_at": m["expires_at"],
+            }
+            for m in rows
+        ],
+    })
+
+
 # ---------------------------------------------------------------- discover
 @app.route("/discover")
 @login_required
@@ -618,7 +1052,7 @@ def discover():
         scope = "everyone"
     query = (
         "SELECT ap.*, u.username, u.display_name FROM artist_pages ap"
-        " JOIN users u ON u.id = ap.user_id WHERE 1 = 1"
+        " JOIN users u ON u.id = ap.user_id WHERE ap.hidden = 0"
     )
     params = []
     if craft != "all":
@@ -721,9 +1155,206 @@ def artist_view(page_id):
         " ORDER BY created_at DESC, id DESC",
         (page_id,),
     ).fetchall()
+    shop_items = db.execute(
+        "SELECT * FROM marketplace_items WHERE artist_page_id = ?"
+        " ORDER BY created_at DESC, id DESC",
+        (page_id,),
+    ).fetchall()
+    tip_rows = db.execute(
+        "SELECT t.*, u.username, u.display_name FROM tips t"
+        " JOIN users u ON u.id = t.sender_id"
+        " WHERE t.artist_page_id = ? ORDER BY t.created_at DESC, t.id DESC",
+        (page_id,),
+    ).fetchall()
+    tip_total = db.execute(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM tips"
+        " WHERE artist_page_id = ?",
+        (page_id,),
+    ).fetchone()[0]
     return render_template(
         "artist_view.html", page=page, items=items,
-        limit=TAP_LIMITS[me["tier"]],
+        limit=TAP_LIMITS[me["tier"]], shop_items=shop_items,
+        tip_rows=tip_rows, tip_total=tip_total,
+    )
+
+
+# ---------------------------------------------------------------- phase 2
+@app.route("/artists/<int:page_id>/tip", methods=["POST"])
+@login_required
+def artist_tip(page_id):
+    """Record a creator tip in the ledger only. No payment is taken and
+    no money moves; the payout stays pending until a real payment
+    provider and payout method are connected by the account owner."""
+    me = current_user()
+    db = get_db()
+    page = db.execute(
+        "SELECT * FROM artist_pages WHERE id = ?", (page_id,)
+    ).fetchone()
+    if not page:
+        abort(404)
+    if page["user_id"] == me["id"]:
+        flash("You cannot tip your own artist page.", "error")
+        return redirect(url_for("artist_view", page_id=page_id))
+    try:
+        amount_cents = int(round(float(request.form.get("amount", "")) * 100))
+    except (TypeError, ValueError):
+        amount_cents = 0
+    note = request.form.get("note", "").strip()[:500]
+    if amount_cents < 100:
+        flash("Tips start at $1.00.", "error")
+        return redirect(url_for("artist_view", page_id=page_id))
+    fee, creator_amount = split_amount(amount_cents)
+    db.execute(
+        "INSERT INTO tips (sender_id, recipient_id, artist_page_id,"
+        " amount_cents, platform_fee_cents, creator_amount_cents, fee_rate,"
+        " note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?,"
+        " 'pending_payout', ?)",
+        (me["id"], page["user_id"], page_id, amount_cents, fee,
+         creator_amount, PLATFORM_FEE_RATE, note, now_iso()),
+    )
+    db.commit()
+    flash(
+        "Tip recorded in the ledger (no payment taken yet): %s total —"
+        " %s to the creator, %s platform fee at %d%%. Payout is pending"
+        " until a payment provider is connected."
+        % (cents_to_dollars(amount_cents), cents_to_dollars(creator_amount),
+           cents_to_dollars(fee), PLATFORM_FEE_PERCENT),
+        "ok",
+    )
+    return redirect(url_for("artist_view", page_id=page_id))
+
+
+@app.route("/artists/<int:page_id>/items", methods=["POST"])
+@login_required
+def artist_item_new(page_id):
+    me = current_user()
+    db = get_db()
+    page = db.execute(
+        "SELECT * FROM artist_pages WHERE id = ?", (page_id,)
+    ).fetchone()
+    if not page:
+        abort(404)
+    if page["user_id"] != me["id"]:
+        flash("Only the page owner can list items.", "error")
+        return redirect(url_for("artist_view", page_id=page_id))
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()[:1000]
+    try:
+        price_cents = int(round(float(request.form.get("price", "")) * 100))
+    except (TypeError, ValueError):
+        price_cents = 0
+    if not title or price_cents < 100:
+        flash("Give the item a title and a price of at least $1.00.",
+              "error")
+        return redirect(url_for("artist_view", page_id=page_id))
+    db.execute(
+        "INSERT INTO marketplace_items (artist_page_id, owner_id, title,"
+        " description, price_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (page_id, me["id"], title, description, price_cents, now_iso()),
+    )
+    db.commit()
+    flash("Item listed. Sales are ledger records only — no checkout"
+          " or payment runs yet.", "ok")
+    return redirect(url_for("artist_view", page_id=page_id))
+
+
+@app.route("/items/<int:item_id>/buy", methods=["POST"])
+@login_required
+def marketplace_buy(item_id):
+    """Record a marketplace sale in the ledger only. No checkout runs
+    and no money moves; the seller amount stays pending payout."""
+    me = current_user()
+    db = get_db()
+    item = db.execute(
+        "SELECT * FROM marketplace_items WHERE id = ?", (item_id,)
+    ).fetchone()
+    if not item:
+        abort(404)
+    if item["owner_id"] == me["id"]:
+        flash("You cannot buy your own item.", "error")
+        return redirect(url_for("artist_view", page_id=item["artist_page_id"]))
+    fee, seller_amount = split_amount(item["price_cents"])
+    db.execute(
+        "INSERT INTO marketplace_sales (item_id, buyer_id, seller_id,"
+        " price_cents, commission_cents, seller_amount_cents,"
+        " commission_rate, status, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_payout', ?)",
+        (item_id, me["id"], item["owner_id"], item["price_cents"], fee,
+         seller_amount, PLATFORM_FEE_RATE, now_iso()),
+    )
+    db.commit()
+    flash(
+        "Sale recorded in the ledger (no payment taken): %s — %s to the"
+        " seller, %s commission at %d%%. Payout is pending until a"
+        " payment provider is connected."
+        % (cents_to_dollars(item["price_cents"]),
+           cents_to_dollars(seller_amount), cents_to_dollars(fee),
+           PLATFORM_FEE_PERCENT),
+        "ok",
+    )
+    return redirect(url_for("artist_view", page_id=item["artist_page_id"]))
+
+
+@app.route("/revenue")
+@login_required
+def revenue():
+    """One-page revenue summary. Every figure is a ledger figure from
+    this database — demo tier switches and demo ledger records included
+    — and none of it is real billed or paid-out revenue."""
+    me = current_user()
+    db = get_db()
+    tier_counts = {
+        r["tier"]: r["n"] for r in db.execute(
+            "SELECT tier, COUNT(*) AS n FROM users GROUP BY tier"
+        ).fetchall()
+    }
+    projected_mrr_cents = (
+        tier_counts.get("pro", 0) * 499 + tier_counts.get("elite", 0) * 1999
+    )
+    paypal_active = db.execute(
+        "SELECT COUNT(*) FROM paypal_subscriptions WHERE status = 'active'"
+    ).fetchone()[0]
+    tip_totals = db.execute(
+        "SELECT COALESCE(SUM(amount_cents), 0) AS total,"
+        " COALESCE(SUM(platform_fee_cents), 0) AS fees,"
+        " COALESCE(SUM(creator_amount_cents), 0) AS creators,"
+        " COUNT(*) AS n FROM tips"
+    ).fetchone()
+    sale_totals = db.execute(
+        "SELECT COALESCE(SUM(price_cents), 0) AS total,"
+        " COALESCE(SUM(commission_cents), 0) AS fees,"
+        " COALESCE(SUM(seller_amount_cents), 0) AS sellers,"
+        " COUNT(*) AS n FROM marketplace_sales"
+    ).fetchone()
+    my_pending = db.execute(
+        "SELECT (SELECT COALESCE(SUM(creator_amount_cents), 0) FROM tips"
+        " WHERE recipient_id = ? AND status = 'pending_payout')"
+        " + (SELECT COALESCE(SUM(seller_amount_cents), 0) FROM"
+        " marketplace_sales WHERE seller_id = ?"
+        " AND status = 'pending_payout')",
+        (me["id"], me["id"]),
+    ).fetchone()[0]
+    creators = []
+    if is_admin_user(me):
+        creators = db.execute(
+            "SELECT u.display_name, u.username,"
+            " (SELECT COALESCE(SUM(creator_amount_cents), 0) FROM tips"
+            "  WHERE recipient_id = u.id AND status = 'pending_payout')"
+            " + (SELECT COALESCE(SUM(seller_amount_cents), 0) FROM"
+            "  marketplace_sales WHERE seller_id = u.id"
+            "  AND status = 'pending_payout') AS pending"
+            " FROM users u ORDER BY pending DESC, u.display_name"
+        ).fetchall()
+        creators = [c for c in creators if c["pending"]]
+    return render_template(
+        "revenue.html",
+        tier_counts=tier_counts,
+        projected_mrr_cents=projected_mrr_cents,
+        paypal_active=paypal_active,
+        tip_totals=tip_totals, sale_totals=sale_totals,
+        my_pending=my_pending, creators=creators,
+        ad_slots_per_feed=AD_SLOTS_PER_FEED,
+        ad_slots_per_discover=AD_SLOTS_PER_DISCOVER,
     )
 
 
@@ -810,6 +1441,24 @@ def lives():
     return render_template(
         "lives.html", lives=rows, options=LIVE_OPTIONS[me["tier"]],
         labels=LIVE_LABELS,
+    )
+
+
+# ---------------------------------------------------------------- pwa
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory(
+        os.path.join(BASE_DIR, "static"), "manifest.json",
+        mimetype="application/manifest+json",
+    )
+
+
+@app.route("/sw.js")
+def service_worker():
+    # Served from the site root so its scope covers all Loop pages.
+    return send_from_directory(
+        os.path.join(BASE_DIR, "static"), "sw.js",
+        mimetype="application/javascript",
     )
 
 
