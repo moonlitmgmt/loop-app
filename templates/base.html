@@ -13,7 +13,7 @@
   <div class="topbar-inner">
     <a class="brand" href="{{ url_for('feed') }}">Loop</a>
     {% if me %}
-    <p class="who">Signed in as {{ me.display_name }} (@{{ me.username }}) · {{ TIER_NAMES[me.tier] }}</p>
+    <p class="who">{% set _me_av = avatar_url(me) %}{% if _me_av %}<img class="avatar avatar-sm" src="{{ _me_av }}" alt="">{% else %}<span class="avatar avatar-sm avatar-initial" aria-hidden="true">{{ avatar_initial(me) }}</span>{% endif %} Signed in as {{ me.display_name }} (@{{ me.username }}) · {{ TIER_NAMES[me.tier] }}</p>
     {% endif %}
   </div>
   {% if me %}

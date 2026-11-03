@@ -242,3 +242,27 @@ footer { color: var(--muted); font-size: 13px; margin: 32px auto 0; max-width: 9
 /* ---- Phase 3: groups, notifications, saved ---- */
 nav .badge { background: #e11d48; color: #fff; }
 .group-card { border-left: 4px solid var(--brand); }
+
+/* ---- Profile pictures: free for every tier ---- */
+.avatar {
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.avatar-sm { width: 32px; height: 32px; }
+.avatar-lg { width: 96px; height: 96px; }
+.avatar-initial {
+  background: var(--brand-grad);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+}
+.avatar-sm.avatar-initial { font-size: 16px; }
+.avatar-lg.avatar-initial { font-size: 40px; }
+.profile-head { display: flex; gap: 16px; align-items: center; }
+.profile-head h1 { margin: 0; }
+.who { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.post-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

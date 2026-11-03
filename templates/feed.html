@@ -25,9 +25,9 @@
 </form>
 {% for p in posts %}
 <article class="card post-card">
-  <p class="post-head"><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
+  <p class="post-head">{% set _p_av = avatar_url(p) %}{% if _p_av %}<img class="avatar avatar-sm" src="{{ _p_av }}" alt="">{% else %}<span class="avatar avatar-sm avatar-initial" aria-hidden="true">{{ avatar_initial(p) }}</span>{% endif %}<span><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
   {% if p.audience == "friends" %}<span class="badge">Friends only</span>{% endif %}
-  {% if p.audience == "group" %}<span class="badge">Group only</span>{% endif %}</p>
+  {% if p.audience == "group" %}<span class="badge">Group only</span>{% endif %}</span></p>
   <p class="post-body">{{ p.body|hashtag_links|safe }}</p>
   <p class="post-stats">{{ engagement[p.id].likes }} likes · {{ engagement[p.id].comments }} comments · {{ p.view_count }} views</p>
   <div class="post-actions">

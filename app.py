@@ -231,7 +231,36 @@ def inject_user():
         "paypal_ready": paypal_ready(),
         "PLATFORM_FEE_PERCENT": PLATFORM_FEE_PERCENT,
         "unread_count": unread,
+        "avatar_url": avatar_url,
+        "avatar_initial": avatar_initial,
     }
+
+
+def avatar_url(user):
+    """Uploaded picture URL for a user row, or None for the initials
+    avatar. Tolerates rows from databases that predate the avatar
+    column (migrate() adds it, but old SELECTs should never crash)."""
+    if user is None:
+        return None
+    try:
+        filename = user["avatar_filename"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    if not filename:
+        return None
+    return url_for("uploaded_file", filename=filename)
+
+
+def avatar_initial(user):
+    """First letter of the display name (or username) for the styled
+    initials avatar shown when no picture has been uploaded."""
+    if user is None:
+        return "?"
+    try:
+        name = user["display_name"] or user["username"]
+    except (KeyError, IndexError, TypeError):
+        return "?"
+    return (name or "?")[:1].upper()
 
 
 def is_friend(a, b):
@@ -477,7 +506,8 @@ def feed():
     friend_ids = {f["id"] for f in friends_of(me["id"])}
     group_ids = group_ids_of(me["id"])
     rows = db.execute(
-        "SELECT p.*, u.username, u.display_name FROM posts p"
+        "SELECT p.*, u.username, u.display_name, u.avatar_filename"
+        " FROM posts p"
         " JOIN users u ON u.id = p.user_id"
         " WHERE p.hidden = 0"
         " ORDER BY p.created_at DESC, p.id DESC LIMIT 200"
@@ -496,7 +526,8 @@ def feed():
     if visible:
         db.commit()
         rows = db.execute(
-            "SELECT p.*, u.username, u.display_name FROM posts p"
+            "SELECT p.*, u.username, u.display_name, u.avatar_filename"
+            " FROM posts p"
             " JOIN users u ON u.id = p.user_id"
             " WHERE p.id IN (%s)"
             % ",".join("?" * len(visible)),
@@ -822,6 +853,49 @@ def profile_view(username):
     if not user:
         abort(404)
     if request.method == "POST" and user["id"] == me["id"]:
+        # Profile pictures are free for all tiers. Only the owner can
+        # change their own picture; posts from anyone else hit this
+        # branch only when user["id"] == me["id"], so a stranger's
+        # form post is ignored and falls through to the normal view.
+        try:
+            old_avatar = user["avatar_filename"]
+        except (KeyError, IndexError, TypeError):
+            old_avatar = None
+        if request.form.get("remove_avatar"):
+            if old_avatar:
+                try:
+                    os.remove(os.path.join(UPLOAD_DIR, old_avatar))
+                except OSError:
+                    pass
+            db.execute(
+                "UPDATE users SET avatar_filename = NULL WHERE id = ?",
+                (me["id"],),
+            )
+            db.commit()
+            flash("Profile picture removed.", "ok")
+            return redirect(url_for("profile_view", username=username))
+        avatar_file = request.files.get("avatar")
+        if avatar_file and avatar_file.filename:
+            filename = save_upload(avatar_file, IMAGE_EXTS)
+            if filename is None:
+                flash(
+                    "That is not an accepted picture. Use a PNG, JPG,"
+                    " JPEG, GIF, or WebP image.",
+                    "error",
+                )
+            else:
+                if old_avatar:
+                    try:
+                        os.remove(os.path.join(UPLOAD_DIR, old_avatar))
+                    except OSError:
+                        pass
+                db.execute(
+                    "UPDATE users SET avatar_filename = ? WHERE id = ?",
+                    (filename, me["id"]),
+                )
+                db.commit()
+                flash("Profile picture saved.", "ok")
+            return redirect(url_for("profile_view", username=username))
         bio = request.form.get("bio", "").strip()
         db.execute("UPDATE users SET bio = ? WHERE id = ?", (bio, me["id"]))
         db.commit()
