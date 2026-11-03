@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+<h1>Groups</h1>
+<p class="page-sub">Communities you can join. Group posts are visible to members only.</p>
+</div>
+<form method="post" class="card composer">
+  <input name="name" placeholder="Group name" required>
+  <textarea name="description" rows="2" placeholder="What is this group about? (optional)"></textarea>
+  <button type="submit">Create group</button>
+</form>
+{% for g in groups %}
+<article class="card post-card">
+  <p class="post-head"><strong><a href="{{ url_for('group_view', group_id=g.id) }}">{{ g.name }}</a></strong> · {{ g.member_count }} member{% if g.member_count != 1 %}s{% endif %} · by {{ g.owner_name }}</p>
+  {% if g.description %}<p class="post-body">{{ g.description }}</p>{% endif %}
+  <p>{% if g.id in mine %}<span class="badge">Member</span>{% else %}<a href="{{ url_for('group_view', group_id=g.id) }}">View and join</a>{% endif %}</p>
+</article>
+{% else %}
+<p>No groups yet. Create the first one.</p>
+{% endfor %}
+{% endblock %}

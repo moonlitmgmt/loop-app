@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+<h1>Notifications</h1>
+<p class="page-sub">Likes, comments, friend requests, and group activity.</p>
+</div>
+<form method="post" class="card composer">
+  <input type="hidden" name="action" value="mark_all">
+  <button type="submit">Mark all as read</button>
+</form>
+{% for n in notifications %}
+<article class="card post-card">
+  <p class="post-head">{% if not n.is_read %}<span class="badge">Unread</span>{% endif %} {{ n.kind|replace('_', ' ')|title }} · {{ n.created_at }} UTC</p>
+  <p class="post-body">{{ n.body }}</p>
+  {% if not n.is_read %}
+  <form method="post" style="display:inline">
+    <input type="hidden" name="action" value="mark_one">
+    <input type="hidden" name="notification_id" value="{{ n.id }}">
+    <button type="submit">Mark as read</button>
+  </form>
+  {% endif %}
+</article>
+{% else %}
+<p>No notifications yet.</p>
+{% endfor %}
+{% endblock %}

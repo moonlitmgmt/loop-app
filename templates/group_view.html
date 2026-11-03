@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+<h1>{{ group.name }}</h1>
+<p class="page-sub">{% if group.description %}{{ group.description }}{% endif %} · by {{ group.owner_name }} · {{ members|length }} member{% if members|length != 1 %}s{% endif %}</p>
+</div>
+{% if is_member %}
+<form method="post" class="card composer">
+  <input type="hidden" name="action" value="leave">
+  <button type="submit">Leave group</button>
+</form>
+<form method="post" class="card composer">
+  <input type="hidden" name="action" value="post">
+  <textarea name="body" rows="3" placeholder="Post to this group (members only)..." required></textarea>
+  <button type="submit">Post to group</button>
+</form>
+{% else %}
+<form method="post" class="card composer">
+  <input type="hidden" name="action" value="join">
+  <button type="submit">Join group</button>
+</form>
+<p>Group posts are visible to members only. Join to see them.</p>
+{% endif %}
+<h2>Members</h2>
+<p>{% for m in members %}{{ m.display_name }} (@{{ m.username }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
+<h2>Group feed</h2>
+{% for p in posts %}
+<article class="card post-card">
+  <p class="post-head"><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC <span class="badge">Group only</span></p>
+  <p class="post-body">{{ p.body|hashtag_links|safe }}</p>
+  <p class="post-stats">{{ engagement[p.id].likes }} likes · {{ engagement[p.id].comments }} comments</p>
+</article>
+{% else %}
+<p>{% if is_member %}No group posts yet.{% else %}Join the group to see its posts.{% endif %}</p>
+{% endfor %}
+{% endblock %}

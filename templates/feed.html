@@ -13,17 +13,30 @@
       <option value="friends">Friends only</option>
     </select>
   </label>
+  {% if my_groups %}
+  <label>Or post to a group (members only)
+    <select name="group_id">
+      <option value="">— No group —</option>
+      {% for g in my_groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
   <button type="submit">Post</button>
 </form>
 {% for p in posts %}
 <article class="card post-card">
   <p class="post-head"><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
-  {% if p.audience == "friends" %}<span class="badge">Friends only</span>{% endif %}</p>
+  {% if p.audience == "friends" %}<span class="badge">Friends only</span>{% endif %}
+  {% if p.audience == "group" %}<span class="badge">Group only</span>{% endif %}</p>
   <p class="post-body">{{ p.body|hashtag_links|safe }}</p>
   <p class="post-stats">{{ engagement[p.id].likes }} likes · {{ engagement[p.id].comments }} comments · {{ p.view_count }} views</p>
   <div class="post-actions">
   <form method="post" action="{{ url_for('post_like', post_id=p.id) }}" style="display:inline">
     <button type="submit">{% if p.id in liked %}Unlike{% else %}Like{% endif %}</button>
+  </form>
+  <form method="post" action="{{ url_for('post_save', post_id=p.id) }}" style="display:inline">
+    <input type="hidden" name="next" value="{{ url_for('feed') }}">
+    <button type="submit">{% if p.id in saved %}Unsave{% else %}Save{% endif %}</button>
   </form>
   <form method="post" action="{{ url_for('report') }}" style="display:inline">
     <input type="hidden" name="target_type" value="post">

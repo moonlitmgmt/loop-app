@@ -238,3 +238,7 @@ footer { color: var(--muted); font-size: 13px; margin: 32px auto 0; max-width: 9
   .post-actions button { width: auto; }
   form[style*="inline"] button { width: auto; }
 }
+
+/* ---- Phase 3: groups, notifications, saved ---- */
+nav .badge { background: #e11d48; color: #fff; }
+.group-card { border-left: 4px solid var(--brand); }

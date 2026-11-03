@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS posts (
     user_id INTEGER NOT NULL,
     body TEXT NOT NULL,
     audience TEXT NOT NULL DEFAULT 'public',
+    group_id INTEGER,
     hidden INTEGER NOT NULL DEFAULT 0,
     view_count INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
@@ -185,6 +186,42 @@ CREATE TABLE IF NOT EXISTS paypal_subscriptions (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    owner_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    actor_id INTEGER,
+    kind TEXT NOT NULL,
+    target_type TEXT NOT NULL DEFAULT '',
+    target_id INTEGER,
+    body TEXT NOT NULL,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS saved_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(post_id, user_id)
+);
 """
 
 DEMO_PASSWORD = "demo1234"
@@ -243,6 +280,8 @@ def migrate(conn):
          " hidden INTEGER NOT NULL DEFAULT 0"),
         ("posts", "view_count", "ALTER TABLE posts ADD COLUMN"
          " view_count INTEGER NOT NULL DEFAULT 0"),
+        ("posts", "group_id", "ALTER TABLE posts ADD COLUMN"
+         " group_id INTEGER"),
         ("artist_pages", "hidden", "ALTER TABLE artist_pages ADD COLUMN"
          " hidden INTEGER NOT NULL DEFAULT 0"),
     ]
@@ -297,6 +336,33 @@ def migrate(conn):
         " commission_rate REAL NOT NULL,"
         " status TEXT NOT NULL DEFAULT 'pending_payout',"
         " created_at TEXT NOT NULL)"
+    )
+    # Phase 3 tables: groups, membership, notifications, saved posts.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS groups ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " name TEXT UNIQUE NOT NULL, description TEXT NOT NULL DEFAULT '',"
+        " owner_id INTEGER NOT NULL, created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS group_members ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " group_id INTEGER NOT NULL, user_id INTEGER NOT NULL,"
+        " created_at TEXT NOT NULL, UNIQUE(group_id, user_id))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS notifications ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " user_id INTEGER NOT NULL, actor_id INTEGER,"
+        " kind TEXT NOT NULL, target_type TEXT NOT NULL DEFAULT '',"
+        " target_id INTEGER, body TEXT NOT NULL,"
+        " is_read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS saved_posts ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " post_id INTEGER NOT NULL, user_id INTEGER NOT NULL,"
+        " created_at TEXT NOT NULL, UNIQUE(post_id, user_id))"
     )
     admin = conn.execute(
         "SELECT COUNT(*) FROM users WHERE is_admin = 1"
@@ -408,6 +474,47 @@ def seed_demo_data(conn):
         " 'text', ?)",
         (june_page, now),
     )
+
+    # Phase 3 demo: one group, one group-only post, one saved post,
+    # and one unread notification, all clearly demo rows.
+    cur = conn.execute(
+        "INSERT INTO groups (name, description, owner_id, created_at)"
+        " VALUES ('Loop Music (demo)', 'Demo group: talk songs, share"
+        " sketches, and cheer each other on.', ?, ?)",
+        (bo, now),
+    )
+    demo_group = cur.lastrowid
+    for member in (amy, bo, june):
+        conn.execute(
+            "INSERT INTO group_members (group_id, user_id, created_at)"
+            " VALUES (?, ?, ?)",
+            (demo_group, member, now),
+        )
+    cur = conn.execute(
+        "INSERT INTO posts (user_id, body, audience, group_id, created_at)"
+        " VALUES (?, ?, 'group', ?, ?)",
+        (bo, "Demo group post: welcome to Loop Music! Members only.",
+         demo_group, now),
+    )
+    demo_group_post = cur.lastrowid
+    conn.execute(
+        "INSERT INTO notifications (user_id, actor_id, kind, target_type,"
+        " target_id, body, is_read, created_at)"
+        " VALUES (?, ?, 'group', 'group', ?, ?, 0, ?)",
+        (amy, bo, demo_group,
+         "Bo Carter (demo) posted in Loop Music (demo).", now),
+    )
+    bo_public = conn.execute(
+        "SELECT id FROM posts WHERE user_id = ? AND audience = 'public'"
+        " ORDER BY id ASC LIMIT 1",
+        (bo,),
+    ).fetchone()
+    if bo_public:
+        conn.execute(
+            "INSERT INTO saved_posts (post_id, user_id, created_at)"
+            " VALUES (?, ?, ?)",
+            (bo_public["id"], amy, now),
+        )
 
     # Linked accounts: Bo is at the Pro cap of 2; June (Elite) has 3.
     conn.execute(

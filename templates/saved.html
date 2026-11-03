@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+<h1>Saved posts</h1>
+<p class="page-sub">Posts you saved, in newest-saved order.</p>
+</div>
+{% for p in posts %}
+<article class="card post-card">
+  <p class="post-head"><strong>{{ p.display_name }}</strong> @{{ p.username }} · {{ p.created_at }} UTC
+  {% if p.audience == "friends" %}<span class="badge">Friends only</span>{% endif %}
+  {% if p.audience == "group" %}<span class="badge">Group only</span>{% endif %}</p>
+  <p class="post-body">{{ p.body|hashtag_links|safe }}</p>
+  <p class="post-stats">{{ engagement[p.id].likes }} likes · {{ engagement[p.id].comments }} comments</p>
+  <form method="post" action="{{ url_for('post_save', post_id=p.id) }}" style="display:inline">
+    <input type="hidden" name="next" value="{{ url_for('saved') }}">
+    <button type="submit">Unsave</button>
+  </form>
+</article>
+{% else %}
+<p>No saved posts yet. Use Save on a feed post.</p>
+{% endfor %}
+{% endblock %}

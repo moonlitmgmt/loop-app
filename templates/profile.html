@@ -10,6 +10,18 @@
 </form>
 {% endif %}
 
+<h2>Activity summary</h2>
+<div class="card">
+<p><strong>{{ stats.friends }}</strong> friends (connections) · <strong>{{ stats.posts }}</strong> posts · <strong>{{ stats.taps }}</strong> Taps · <strong>{{ stats.artist_pages }}</strong> artist pages · <strong>{{ stats.groups }}</strong> groups joined · <strong>{{ stats.likes_received }}</strong> likes received · <strong>{{ stats.comments_received }}</strong> comments received</p>
+<p>Loop has no directed follow system, so the connection count above is the friend count, not invented followers.</p>
+</div>
+<h3>Recent activity</h3>
+{% for item in recent %}
+<p class="card">{{ item.kind|title }}: {{ item.title }} · {{ item.created_at }} UTC</p>
+{% else %}
+<p>No recent posts or Taps yet.</p>
+{% endfor %}
+
 <h2>Artist pages</h2>
 {% for a in artists %}
 <p><a href="{{ url_for('artist_view', page_id=a.id) }}">{{ a.artist_name }}</a> ({{ a.artist_handle }}) — {{ a.craft }}, {{ a.scope }}</p>

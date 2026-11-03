@@ -214,12 +214,23 @@ def login_required(view):
 @app.context_processor
 def inject_user():
     me = current_user()
+    unread = 0
+    if me:
+        try:
+            unread = get_db().execute(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ?"
+                " AND is_read = 0",
+                (me["id"],),
+            ).fetchone()[0]
+        except Exception:
+            unread = 0
     return {
         "me": me,
         "is_admin": is_admin_user(me),
         "TIER_NAMES": TIER_NAMES,
         "paypal_ready": paypal_ready(),
         "PLATFORM_FEE_PERCENT": PLATFORM_FEE_PERCENT,
+        "unread_count": unread,
     }
 
 
@@ -243,6 +254,48 @@ def friends_of(uid):
         " ORDER BY u.display_name",
         (uid, uid, uid),
     ).fetchall()
+
+
+def notify(db, user_id, actor_id, kind, target_type, target_id, body):
+    """Create a notification, never for the actor themselves."""
+    if not user_id or user_id == actor_id:
+        return
+    db.execute(
+        "INSERT INTO notifications (user_id, actor_id, kind, target_type,"
+        " target_id, body, is_read, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+        (user_id, actor_id, kind, target_type, target_id, body, now_iso()),
+    )
+
+
+def group_ids_of(uid):
+    return {
+        r["group_id"] for r in get_db().execute(
+            "SELECT group_id FROM group_members WHERE user_id = ?",
+            (uid,),
+        ).fetchall()
+    }
+
+
+def groups_of(uid):
+    return get_db().execute(
+        "SELECT g.*, u.display_name AS owner_name FROM groups g"
+        " JOIN users u ON u.id = g.owner_id"
+        " JOIN group_members m ON m.group_id = g.id"
+        " WHERE m.user_id = ? ORDER BY g.name",
+        (uid,),
+    ).fetchall()
+
+
+def post_visible_to(post, viewer_id, friend_ids, group_ids):
+    """Group posts are members-only; friends posts need friendship;
+    public posts are open. Hidden posts are handled by the caller."""
+    gid = post["group_id"] if "group_id" in post.keys() else None
+    if gid:
+        return post["user_id"] == viewer_id or gid in group_ids
+    if post["audience"] == "public":
+        return True
+    return post["user_id"] == viewer_id or post["user_id"] in friend_ids
 
 
 def streak_between(a, b):
@@ -387,18 +440,42 @@ def feed():
         audience = request.form.get("audience", "public")
         if audience not in ("public", "friends"):
             audience = "public"
+        group_id = request.form.get("group_id", "").strip()
+        if group_id.isdigit() and int(group_id) in group_ids_of(me["id"]):
+            audience = "group"
+            group_id = int(group_id)
+        else:
+            group_id = None
         if not body:
             flash("Write something first.", "error")
         else:
             db.execute(
-                "INSERT INTO posts (user_id, body, audience, created_at)"
-                " VALUES (?, ?, ?, ?)",
-                (me["id"], body, audience, now_iso()),
+                "INSERT INTO posts (user_id, body, audience, group_id,"
+                " created_at) VALUES (?, ?, ?, ?, ?)",
+                (me["id"], body, audience, group_id, now_iso()),
             )
             db.commit()
+            if group_id:
+                members = db.execute(
+                    "SELECT user_id FROM group_members WHERE group_id = ?",
+                    (group_id,),
+                ).fetchall()
+                group = db.execute(
+                    "SELECT name FROM groups WHERE id = ?", (group_id,)
+                ).fetchone()
+                for m in members:
+                    notify(
+                        db, m["user_id"], me["id"], "group", "group",
+                        group_id,
+                        "%s posted in %s." % (
+                            me["display_name"],
+                            group["name"] if group else "a group"),
+                    )
+                db.commit()
             flash("Posted.", "ok")
         return redirect(url_for("feed"))
     friend_ids = {f["id"] for f in friends_of(me["id"])}
+    group_ids = group_ids_of(me["id"])
     rows = db.execute(
         "SELECT p.*, u.username, u.display_name FROM posts p"
         " JOIN users u ON u.id = p.user_id"
@@ -407,9 +484,7 @@ def feed():
     ).fetchall()
     visible = [
         p for p in rows
-        if p["audience"] == "public"
-        or p["user_id"] == me["id"]
-        or p["user_id"] in friend_ids
+        if post_visible_to(p, me["id"], friend_ids, group_ids)
     ]
     # Simple view counter: one view per visible post per feed load.
     # It is a popularity signal, not a unique-viewer count.
@@ -455,9 +530,16 @@ def feed():
             " ORDER BY c.created_at ASC, c.id ASC",
             (p["id"],),
         ).fetchall()
+    saved = {
+        r["post_id"] for r in db.execute(
+            "SELECT post_id FROM saved_posts WHERE user_id = ?",
+            (me["id"],),
+        ).fetchall()
+    }
     return render_template(
         "feed.html", posts=ordered, engagement=engagement, liked=liked,
-        comments=comments, sort=sort,
+        comments=comments, sort=sort, my_groups=groups_of(me["id"]),
+        saved=saved,
     )
 
 
@@ -486,6 +568,10 @@ def post_like(post_id):
             " VALUES (?, ?, ?)",
             (post_id, me["id"], now_iso()),
         )
+        notify(
+            db, post["user_id"], me["id"], "like", "post", post_id,
+            "%s liked your post." % me["display_name"],
+        )
     db.commit()
     return redirect(url_for("feed"))
 
@@ -509,6 +595,10 @@ def post_comment(post_id):
             " VALUES (?, ?, ?, ?)",
             (post_id, me["id"], body, now_iso()),
         )
+        notify(
+            db, post["user_id"], me["id"], "comment", "post", post_id,
+            "%s commented on your post." % me["display_name"],
+        )
         db.commit()
     return redirect(url_for("feed"))
 
@@ -522,6 +612,7 @@ def tag_page(tag):
     if not tag:
         abort(404)
     friend_ids = {f["id"] for f in friends_of(me["id"])}
+    group_ids = group_ids_of(me["id"])
     rows = db.execute(
         "SELECT p.*, u.username, u.display_name FROM posts p"
         " JOIN users u ON u.id = p.user_id"
@@ -531,9 +622,7 @@ def tag_page(tag):
     ).fetchall()
     visible = [
         p for p in rows
-        if p["audience"] == "public"
-        or p["user_id"] == me["id"]
-        or p["user_id"] in friend_ids
+        if post_visible_to(p, me["id"], friend_ids, group_ids)
     ]
     engagement = post_engagement(db, [p["id"] for p in visible])
     return render_template(
@@ -755,10 +844,45 @@ def profile_view(username):
         " ORDER BY created_at DESC",
         (user["id"],),
     ).fetchall()
+    # Activity summary. Loop has no directed follow system — its
+    # connection graph is friendships — so the connection count is the
+    # friend count, labelled as such rather than invented followers.
+    stats = {
+        "friends": len(friends_of(user["id"])),
+        "posts": db.execute(
+            "SELECT COUNT(*) FROM posts WHERE user_id = ? AND hidden = 0",
+            (user["id"],),
+        ).fetchone()[0],
+        "taps": db.execute(
+            "SELECT COUNT(*) FROM taps WHERE user_id = ?", (user["id"],)
+        ).fetchone()[0],
+        "artist_pages": len(artists),
+        "groups": db.execute(
+            "SELECT COUNT(*) FROM group_members WHERE user_id = ?",
+            (user["id"],),
+        ).fetchone()[0],
+        "likes_received": db.execute(
+            "SELECT COUNT(*) FROM post_likes l JOIN posts p"
+            " ON p.id = l.post_id WHERE p.user_id = ?",
+            (user["id"],),
+        ).fetchone()[0],
+        "comments_received": db.execute(
+            "SELECT COUNT(*) FROM post_comments c JOIN posts p"
+            " ON p.id = c.post_id WHERE p.user_id = ?",
+            (user["id"],),
+        ).fetchone()[0],
+    }
+    recent = db.execute(
+        "SELECT 'post' AS kind, body AS title, created_at FROM posts"
+        " WHERE user_id = ? AND hidden = 0 AND audience != 'group'"
+        " UNION ALL SELECT 'tap', title, created_at FROM taps"
+        " WHERE user_id = ? ORDER BY created_at DESC, title ASC LIMIT 5",
+        (user["id"], user["id"]),
+    ).fetchall()
     return render_template(
         "profile.html", user=user, personal=personal,
         can_see_personal=can_see_personal, artists=artists, links=links,
-        LINK_CAPS=LINK_CAPS,
+        LINK_CAPS=LINK_CAPS, stats=stats, recent=recent,
     )
 
 
@@ -794,6 +918,12 @@ def friends():
                         " ?, ?)",
                         (lo, hi, me["id"], now_iso()),
                     )
+                    notify(
+                        db, other["id"], me["id"], "friend_request",
+                        "user", me["id"],
+                        "%s sent you a friend request."
+                        % me["display_name"],
+                    )
                     db.commit()
                     flash("Friend request sent.", "ok")
         elif action == "accept":
@@ -806,6 +936,12 @@ def friends():
                 db.execute(
                     "UPDATE friendships SET status = 'accepted' WHERE id = ?",
                     (fid,),
+                )
+                notify(
+                    db, row["requester_id"], me["id"], "friend_accept",
+                    "user", me["id"],
+                    "%s accepted your friend request."
+                    % me["display_name"],
                 )
                 db.commit()
                 flash("Friend request accepted.", "ok")
@@ -839,6 +975,215 @@ def friends():
     return render_template(
         "friends.html", friends=my_friends, incoming=incoming,
         outgoing=outgoing,
+    )
+
+
+# ---------------------------------------------------------------- phase 3
+@app.route("/groups", methods=["GET", "POST"])
+@login_required
+def groups():
+    me = current_user()
+    db = get_db()
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()[:100]
+        description = request.form.get("description", "").strip()[:500]
+        if not name:
+            flash("Give the group a name.", "error")
+        else:
+            try:
+                cur = db.execute(
+                    "INSERT INTO groups (name, description, owner_id,"
+                    " created_at) VALUES (?, ?, ?, ?)",
+                    (name, description, me["id"], now_iso()),
+                )
+                db.execute(
+                    "INSERT INTO group_members (group_id, user_id,"
+                    " created_at) VALUES (?, ?, ?)",
+                    (cur.lastrowid, me["id"], now_iso()),
+                )
+                db.commit()
+                flash("Group created. You are its first member.", "ok")
+                return redirect(url_for("group_view", group_id=cur.lastrowid))
+            except Exception:
+                db.rollback()
+                flash("A group with that name already exists.", "error")
+        return redirect(url_for("groups"))
+    rows = db.execute(
+        "SELECT g.*, u.display_name AS owner_name,"
+        " (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)"
+        " AS member_count FROM groups g JOIN users u ON u.id = g.owner_id"
+        " ORDER BY g.name"
+    ).fetchall()
+    mine = group_ids_of(me["id"])
+    return render_template("groups.html", groups=rows, mine=mine)
+
+
+@app.route("/groups/<int:group_id>", methods=["GET", "POST"])
+@login_required
+def group_view(group_id):
+    me = current_user()
+    db = get_db()
+    group = db.execute(
+        "SELECT g.*, u.display_name AS owner_name FROM groups g"
+        " JOIN users u ON u.id = g.owner_id WHERE g.id = ?",
+        (group_id,),
+    ).fetchone()
+    if not group:
+        abort(404)
+    members = db.execute(
+        "SELECT u.* FROM group_members m JOIN users u ON u.id = m.user_id"
+        " WHERE m.group_id = ? ORDER BY u.display_name",
+        (group_id,),
+    ).fetchall()
+    is_member = any(m["id"] == me["id"] for m in members)
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "join" and not is_member:
+            db.execute(
+                "INSERT INTO group_members (group_id, user_id, created_at)"
+                " VALUES (?, ?, ?)",
+                (group_id, me["id"], now_iso()),
+            )
+            notify(
+                db, group["owner_id"], me["id"], "group_join", "group",
+                group_id,
+                "%s joined your group %s."
+                % (me["display_name"], group["name"]),
+            )
+            db.commit()
+            flash("Joined %s." % group["name"], "ok")
+        elif action == "leave" and is_member:
+            db.execute(
+                "DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
+                (group_id, me["id"]),
+            )
+            db.commit()
+            flash("Left %s." % group["name"], "ok")
+        elif action == "post":
+            if not is_member:
+                flash("Join the group before posting in it.", "error")
+            else:
+                body = request.form.get("body", "").strip()
+                if not body:
+                    flash("Write something first.", "error")
+                else:
+                    db.execute(
+                        "INSERT INTO posts (user_id, body, audience,"
+                        " group_id, created_at) VALUES (?, ?, 'group', ?, ?)",
+                        (me["id"], body, group_id, now_iso()),
+                    )
+                    for m in members:
+                        notify(
+                            db, m["id"], me["id"], "group", "group",
+                            group_id,
+                            "%s posted in %s."
+                            % (me["display_name"], group["name"]),
+                        )
+                    db.commit()
+                    flash("Posted to the group.", "ok")
+        return redirect(url_for("group_view", group_id=group_id))
+    posts = []
+    if is_member:
+        posts = db.execute(
+            "SELECT p.*, u.username, u.display_name FROM posts p"
+            " JOIN users u ON u.id = p.user_id"
+            " WHERE p.group_id = ? AND p.hidden = 0"
+            " ORDER BY p.created_at DESC, p.id DESC",
+            (group_id,),
+        ).fetchall()
+    engagement = post_engagement(db, [p["id"] for p in posts])
+    return render_template(
+        "group_view.html", group=group, members=members,
+        is_member=is_member, posts=posts, engagement=engagement,
+    )
+
+
+@app.route("/notifications", methods=["GET", "POST"])
+@login_required
+def notifications():
+    me = current_user()
+    db = get_db()
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "mark_all":
+            db.execute(
+                "UPDATE notifications SET is_read = 1 WHERE user_id = ?",
+                (me["id"],),
+            )
+            db.commit()
+            flash("All notifications marked as read.", "ok")
+        elif action == "mark_one":
+            nid = request.form.get("notification_id", "")
+            if nid.isdigit():
+                db.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE id = ?"
+                    " AND user_id = ?",
+                    (int(nid), me["id"]),
+                )
+                db.commit()
+        return redirect(url_for("notifications"))
+    rows = db.execute(
+        "SELECT n.*, u.display_name AS actor_name FROM notifications n"
+        " LEFT JOIN users u ON u.id = n.actor_id WHERE n.user_id = ?"
+        " ORDER BY n.created_at DESC, n.id DESC LIMIT 100",
+        (me["id"],),
+    ).fetchall()
+    return render_template("notifications.html", notifications=rows)
+
+
+@app.route("/posts/<int:post_id>/save", methods=["POST"])
+@login_required
+def post_save(post_id):
+    me = current_user()
+    db = get_db()
+    post = db.execute(
+        "SELECT * FROM posts WHERE id = ? AND hidden = 0", (post_id,)
+    ).fetchone()
+    if not post:
+        abort(404)
+    existing = db.execute(
+        "SELECT 1 FROM saved_posts WHERE post_id = ? AND user_id = ?",
+        (post_id, me["id"]),
+    ).fetchone()
+    if existing:
+        db.execute(
+            "DELETE FROM saved_posts WHERE post_id = ? AND user_id = ?",
+            (post_id, me["id"]),
+        )
+        flash("Removed from saved posts.", "ok")
+    else:
+        db.execute(
+            "INSERT INTO saved_posts (post_id, user_id, created_at)"
+            " VALUES (?, ?, ?)",
+            (post_id, me["id"], now_iso()),
+        )
+        flash("Saved.", "ok")
+    db.commit()
+    return redirect(request.form.get("next") or url_for("feed"))
+
+
+@app.route("/saved")
+@login_required
+def saved():
+    me = current_user()
+    db = get_db()
+    friend_ids = {f["id"] for f in friends_of(me["id"])}
+    group_ids = group_ids_of(me["id"])
+    rows = db.execute(
+        "SELECT p.*, u.username, u.display_name FROM saved_posts s"
+        " JOIN posts p ON p.id = s.post_id"
+        " JOIN users u ON u.id = p.user_id"
+        " WHERE s.user_id = ? AND p.hidden = 0"
+        " ORDER BY s.created_at DESC, s.id DESC",
+        (me["id"],),
+    ).fetchall()
+    visible = [
+        p for p in rows
+        if post_visible_to(p, me["id"], friend_ids, group_ids)
+    ]
+    engagement = post_engagement(db, [p["id"] for p in visible])
+    return render_template(
+        "saved.html", posts=visible, engagement=engagement,
     )
 
 

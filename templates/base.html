@@ -19,6 +19,9 @@
   {% if me %}
   <nav>
     <a href="{{ url_for('feed') }}">Feed</a>
+    <a href="{{ url_for('groups') }}">Groups</a>
+    <a href="{{ url_for('notifications') }}">Notifications{% if unread_count %} <span class="badge">{{ unread_count }} unread</span>{% endif %}</a>
+    <a href="{{ url_for('saved') }}">Saved</a>
     <a href="{{ url_for('taps') }}">Taps</a>
     <a href="{{ url_for('stories') }}">Stories</a>
     <a href="{{ url_for('messages') }}">Messages</a>
