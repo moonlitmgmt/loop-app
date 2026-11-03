@@ -1,0 +1,39 @@
+name: Unzip v4 upload
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract v4 package over repo files
+        run: |
+          set -euo pipefail
+          unzip -o loop-app-v4-upload.zip -d /tmp/v4pkg
+          entries=$(ls -A /tmp/v4pkg)
+          count=$(printf '%s\n' "$entries" | wc -l)
+          if [ "$count" = "1" ] && [ -d "/tmp/v4pkg/$entries" ]; then
+            SRC="/tmp/v4pkg/$entries"
+          else
+            SRC=/tmp/v4pkg
+          fi
+          echo "Copying from $SRC"
+          ls -la "$SRC"
+          cp -rf "$SRC"/. "$GITHUB_WORKSPACE"/
+          rm -f "$GITHUB_WORKSPACE/loop-app-v4-upload.zip"
+          rm -f "$GITHUB_WORKSPACE/.github/workflows/unzip.yml"
+
+      - name: Commit extracted v4 files
+        run: |
+          git config user.name "moonlitmgmt"
+          git config user.email "moonlitmgmt@users.noreply.github.com"
+          git add -A
+          git status --short
+          git commit -m "Deploy Loop v4: profile pictures" || echo "nothing to commit"
+          git push
