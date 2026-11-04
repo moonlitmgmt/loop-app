@@ -288,7 +288,9 @@ nav .badge { background: #e11d48; color: #fff; }
   margin-top: -84px;
   border: 4px solid #fff;
   box-shadow: 0 2px 8px rgba(23, 23, 31, .25);
-  background: #fff;
+}
+.profile-head-cover .avatar-initial {
+  background: var(--brand-grad);
 }
 .profile-identity { min-width: 0; }
 .profile-identity h1 { margin: 0; }
