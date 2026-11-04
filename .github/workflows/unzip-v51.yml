@@ -1,0 +1,49 @@
+name: Unzip Loop v5.1 hotfix package
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  unzip-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Extract hotfix package
+        run: |
+          set -e
+          unzip -o loop-app-v5-1-upload.zip
+          # Flatten a single top-level folder if the zip used one
+          TOPS=$(unzip -Z1 loop-app-v5-1-upload.zip | cut -d/ -f1 | sort -u)
+          if [ "$(printf '%s' "$TOPS" | grep -c .)" = "1" ] && [ -d "$TOPS" ] && [ ! -f app.py ]; then
+            echo "Single top-level folder '$TOPS' detected; flattening"
+            shopt -s dotglob
+            mv "$TOPS"/* .
+            rmdir "$TOPS" || true
+          fi
+          rm -rf __MACOSX
+          find . -name '.DS_Store' -delete || true
+      - name: Verify hotfix
+        run: |
+          set -e
+          SIZE=$(stat -c%s static/style.css)
+          echo "static/style.css size: $SIZE bytes"
+          if [ "$SIZE" -lt 10300 ] || [ "$SIZE" -gt 10500 ]; then
+            echo "ERROR: unexpected style.css size"; exit 1
+          fi
+          grep -qF '.profile-head-cover .avatar-initial' static/style.css \
+            || { echo "ERROR: .avatar-initial class missing"; exit 1; }
+          [ ! -f loop.db ] || { echo "ERROR: loop.db present"; exit 1; }
+          echo "Hotfix verification passed"
+      - name: Commit extracted files
+        run: |
+          set -e
+          git config user.name "moonlitmgmt"
+          git config user.email "moonlitmgmt@users.noreply.github.com"
+          rm -f loop-app-v5-1-upload.zip
+          git add -A
+          git status --short
+          git diff --cached --stat
+          git commit -m "Deploy Loop v5.1: profile avatar initials hotfix" || echo "nothing to commit"
+          git push origin main
