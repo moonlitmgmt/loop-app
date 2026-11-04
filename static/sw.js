@@ -2,7 +2,7 @@
    installed app loads fast and survives a patchy connection. Pages
    themselves always go to the network first, so content never goes
    stale from the cache. No user data is cached here. */
-const CACHE = 'loop-static-v1';
+const CACHE = 'loop-static-v2';
 const STATIC_FILES = ['/static/style.css', '/static/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
