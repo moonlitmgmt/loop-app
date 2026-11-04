@@ -1,30 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="profile-head">
-  {% set _av = avatar_url(user) %}
-  {% if _av %}<img class="avatar avatar-lg" src="{{ _av }}" alt="Profile picture for {{ user.display_name }}">{% else %}<span class="avatar avatar-lg avatar-initial" aria-hidden="true">{{ avatar_initial(user) }}</span>{% endif %}
-  <div>
-    <h1>{{ user.display_name }}</h1>
-    <p>@{{ user.username }} · {{ TIER_NAMES[user.tier] }}</p>
-    {% if user.bio %}<p>{{ user.bio }}</p>{% endif %}
+<div class="profile-header">
+  <div class="profile-cover" aria-hidden="true"></div>
+  <div class="profile-head profile-head-cover">
+    {% set _av = avatar_url(user) %}
+    {% if _av %}<img class="avatar avatar-lg" src="{{ _av }}" alt="Profile picture for {{ user.display_name }}">{% else %}<span class="avatar avatar-lg avatar-initial" aria-hidden="true">{{ avatar_initial(user) }}</span>{% endif %}
+    <div class="profile-identity">
+      <h1>{{ user.display_name }}</h1>
+      <p>@{{ user.username }} · {{ TIER_NAMES[user.tier] }}</p>
+      {% if user.bio %}<p>{{ user.bio }}</p>{% endif %}
+    </div>
   </div>
 </div>
 {% if user.id == me.id %}
-<form method="post" class="card">
-  <label>Bio <textarea name="bio" rows="2">{{ user.bio }}</textarea></label>
-  <button type="submit">Save bio</button>
-</form>
-<form method="post" enctype="multipart/form-data" class="card">
-  <label>Profile picture <input type="file" name="avatar" accept="image/png,image/jpeg,image/gif,image/webp"></label>
-  <p class="page-sub">Free for every plan. PNG, JPG, JPEG, GIF, or WebP.</p>
-  <button type="submit">Save picture</button>
-</form>
-{% if avatar_url(user) %}
-<form method="post" class="card">
-  <input type="hidden" name="remove_avatar" value="1">
-  <button type="submit" class="btn-secondary">Remove picture</button>
-</form>
-{% endif %}
+<div class="card edit-profile-card">
+  <h2>Edit profile</h2>
+  <form method="post">
+    <label>Bio <textarea name="bio" rows="2">{{ user.bio }}</textarea></label>
+    <button type="submit">Save bio</button>
+  </form>
+  <form method="post" enctype="multipart/form-data">
+    <label>Profile picture <input type="file" name="avatar" accept="image/png,image/jpeg,image/gif,image/webp"></label>
+    <p class="page-sub">Free for every plan. PNG, JPG, JPEG, GIF, or WebP.</p>
+    <button type="submit">Save picture</button>
+  </form>
+  {% if avatar_url(user) %}
+  <form method="post">
+    <input type="hidden" name="remove_avatar" value="1">
+    <button type="submit" class="btn-secondary">Remove picture</button>
+  </form>
+  {% endif %}
+</div>
 {% endif %}
 
 <h2>Activity summary</h2>

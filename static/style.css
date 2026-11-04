@@ -251,7 +251,7 @@ nav .badge { background: #e11d48; color: #fff; }
   overflow: hidden;
 }
 .avatar-sm { width: 32px; height: 32px; }
-.avatar-lg { width: 96px; height: 96px; }
+.avatar-lg { width: 168px; height: 168px; }
 .avatar-initial {
   background: var(--brand-grad);
   color: #fff;
@@ -261,8 +261,66 @@ nav .badge { background: #e11d48; color: #fff; }
   font-weight: 800;
 }
 .avatar-sm.avatar-initial { font-size: 16px; }
-.avatar-lg.avatar-initial { font-size: 40px; }
+.avatar-lg.avatar-initial { font-size: 72px; }
 .profile-head { display: flex; gap: 16px; align-items: center; }
 .profile-head h1 { margin: 0; }
 .who { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .post-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---- Facebook-style profile header ---- */
+.profile-header {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.profile-cover {
+  height: 200px;
+  background: var(--brand-grad);
+}
+.profile-head-cover {
+  padding: 0 20px 20px;
+  align-items: flex-end;
+}
+.profile-head-cover .avatar-lg {
+  margin-top: -84px;
+  border: 4px solid #fff;
+  box-shadow: 0 2px 8px rgba(23, 23, 31, .25);
+  background: #fff;
+}
+.profile-identity { min-width: 0; }
+.profile-identity h1 { margin: 0; }
+.profile-identity p { margin: 4px 0; }
+.edit-profile-card h2 { margin-top: 0; }
+.edit-profile-card form { margin-bottom: 8px; }
+.edit-profile-card form:last-child { margin-bottom: 0; }
+@media (max-width: 640px) {
+  .profile-cover { height: 140px; }
+  .profile-head-cover { flex-wrap: wrap; padding: 0 14px 16px; }
+  .profile-head-cover .avatar-lg { margin-top: -60px; }
+}
+
+/* ---- Bulletproof avatar sizing (LAST in this file, after the global
+   img, video rule at line 200) ----
+   The global rule sets max-width: 100% / display: block on every image,
+   which let an uploaded picture stretch to container width. These
+   higher-specificity rules sit at the end of the file so nothing above
+   them can override an avatar's bounded size. */
+img.avatar, span.avatar, .avatar {
+  max-width: none;
+  min-width: 0;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 50%;
+}
+img.avatar { display: block; }
+span.avatar { display: inline-flex; }
+img.avatar.avatar-sm, span.avatar.avatar-sm { width: 32px; height: 32px; }
+img.avatar.avatar-lg, span.avatar.avatar-lg {
+  width: 168px;
+  height: 168px;
+  border: 4px solid #fff;
+  box-shadow: 0 2px 8px rgba(23, 23, 31, .25);
+}
